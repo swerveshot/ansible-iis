@@ -82,10 +82,18 @@ jobs:
     env:
       ANSIBLE_ROLES_PATH: roles
       ANSIBLE_COLLECTIONS_PATH: collections
-      PYTHONUTF8: 1
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set UTF-8 encoding for Ansible
+        shell: powershell
+        run: |
+          $OutputEncoding = [System.Text.Encoding]::UTF8
+          [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          [System.Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+          Add-Content -Path $env:GITHUB_ENV -Value "PYTHONUTF8=1"
+          Add-Content -Path $env:GITHUB_ENV -Value "PYTHONIOENCODING=utf-8"
 
       - uses: actions/setup-python@v5
         with:
