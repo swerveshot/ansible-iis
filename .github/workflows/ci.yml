@@ -139,9 +139,11 @@ jobs:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
           WSLENV: CI_ANSIBLE_PASSWORD
         run: |
-          # WSL 2 reaches the Windows host via the default gateway (not the
-          # Azure DNS nameserver which resolv.conf points to on GH runners)
+          # NTFS mounts appear world-writable; fix so Ansible reads ansible.cfg
+          chmod 755 .
+          # WSL 2: use default gateway. WSL 1: no default route, use 127.0.0.1.
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
+          [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
           echo "Windows host IP: $WIN_HOST_IP"
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
           /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
@@ -157,7 +159,9 @@ jobs:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
           WSLENV: CI_ANSIBLE_PASSWORD
         run: |
+          chmod 755 .
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
+          [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
           output=$(ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
