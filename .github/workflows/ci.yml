@@ -145,12 +145,14 @@ jobs:
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
           echo "Windows host IP: $WIN_HOST_IP"
+          # Write credentials to JSON so special chars (e.g. {%) in the
+          # generated password are not misinterpreted as Jinja2 by Ansible
+          python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
           /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
-            -e "ansible_user=ansible-ci" \
-            -e "ansible_password=$CI_ANSIBLE_PASSWORD" \
+            -e @/tmp/ci_vars.json \
             -v
 
       - name: Idempotency check (second run must report changed=0)
@@ -162,12 +164,12 @@ jobs:
           chmod 755 .
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
+          python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
           output=$(ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
-            -e "ansible_user=ansible-ci" \
-            -e "ansible_password=$CI_ANSIBLE_PASSWORD" 2>&1)
+            -e @/tmp/ci_vars.json 2>&1)
           rc=$?
           echo "$output"
           if [ $rc -ne 0 ]; then
