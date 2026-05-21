@@ -101,11 +101,17 @@ jobs:
 
       - name: Install Python dependencies
         shell: powershell
-        run: pip install -r requirements.txt
+        run: |
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
+          pip install -r requirements.txt
 
       - name: Install Ansible collections
         shell: powershell
-        run: ansible-galaxy collection install -r requirements.yml --collections-path collections
+        run: |
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
+          ansible-galaxy collection install -r requirements.yml --collections-path collections
 
       # Configure WinRM for HTTP basic auth (safe: ephemeral runner, loopback only)
       - name: Configure WinRM and create CI test user
@@ -134,6 +140,8 @@ jobs:
       - name: Run Ansible playbook
         shell: powershell
         run: |
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
           ansible-playbook playbooks/site.yml `
             -i ci/inventory/hosts.yml `
             -e "ansible_user=ansible-ci" `
@@ -145,6 +153,8 @@ jobs:
       - name: Idempotency check (second run must report changed=0)
         shell: powershell
         run: |
+          $env:PYTHONUTF8 = "1"
+          $env:PYTHONIOENCODING = "utf-8"
           $output = ansible-playbook playbooks/site.yml `
             -i ci/inventory/hosts.yml `
             -e "ansible_user=ansible-ci" `
