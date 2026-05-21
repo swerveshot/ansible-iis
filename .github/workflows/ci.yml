@@ -7,9 +7,10 @@
 #   syntax      - Ansible syntax validation (Ubuntu, every push)
 #   integration - Full playbook run against a real Windows Server 2022 runner
 #
-# The integration job runs on a windows-2022 GitHub-hosted runner. Ansible
-# runs on the same machine (Python), targeting localhost via WinRM HTTP.
-# A temporary local admin account is created for the duration of the job.
+# The integration job runs on a windows-2022 GitHub-hosted runner.
+# Ansible cannot use Windows as a control node (Unix-only), so it runs inside
+# WSL (Ubuntu, pre-installed on the runner). WSL connects back to the Windows
+# host via WinRM using the WSL gateway IP (obtained from /etc/resolv.conf).
 #
 # CI-specific overrides (no D-drive, single .NET version) are in ci/inventory/.
 
@@ -73,53 +74,18 @@ jobs:
         run: ansible-playbook playbooks/site.yml --syntax-check -i ci/inventory/hosts.yml
 
   # ---------------------------------------------------------------------------
-  # Integration: full playbook run on a real Windows Server 2022 runner
+  # Integration: full playbook run on a real Windows Server 2022 runner.
+  # Ansible runs from WSL (Ubuntu) on the same machine; Windows is the target.
   # ---------------------------------------------------------------------------
   integration:
     name: Integration test (Windows Server 2022)
     runs-on: windows-2022
     needs: [lint, syntax]
-    env:
-      ANSIBLE_ROLES_PATH: roles
-      ANSIBLE_COLLECTIONS_PATH: collections
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set UTF-8 encoding for Ansible
-        shell: powershell
-        run: |
-          # Change the system ANSI code page to UTF-8 (65001).
-          # GetACP() is what Python's locale.getpreferredencoding() reads on Windows.
-          # PYTHONUTF8=1 should override this but does not on the windows-2022 image;
-          # changing the registry is the only reliable fix and takes effect for new processes.
-          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Nls\CodePage" `
-            -Name "ACP" -Value "65001"
-          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Nls\CodePage" `
-            -Name "OEMCP" -Value "65001"
-          Add-Content -Path $env:GITHUB_ENV -Value "PYTHONUTF8=1"
-          Add-Content -Path $env:GITHUB_ENV -Value "PYTHONIOENCODING=utf-8"
-          Write-Host "System code page set to UTF-8 (65001)"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python dependencies
-        shell: powershell
-        run: |
-          $env:PYTHONUTF8 = "1"
-          $env:PYTHONIOENCODING = "utf-8"
-          pip install -r requirements.txt
-
-      - name: Install Ansible collections
-        shell: powershell
-        run: |
-          $env:PYTHONUTF8 = "1"
-          $env:PYTHONIOENCODING = "utf-8"
-          ansible-galaxy collection install -r requirements.yml --collections-path collections
-
-      # Configure WinRM for HTTP basic auth (safe: ephemeral runner, loopback only)
+      # Configure WinRM for HTTP basic auth (safe: ephemeral runner only)
       - name: Configure WinRM and create CI test user
         shell: powershell
         run: |
@@ -130,42 +96,83 @@ jobs:
           $ciPassword = [System.Web.Security.Membership]::GeneratePassword(20, 4)
           "CI_ANSIBLE_PASSWORD=$ciPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          # Enable WinRM with HTTP basic auth for localhost testing
+          # Enable WinRM with HTTP basic auth
           winrm quickconfig -force
           winrm set winrm/config/service/auth '@{Basic="true"}'
           winrm set winrm/config/service '@{AllowUnencrypted="true"}'
-          Set-Item WSMan:\localhost\Client\TrustedHosts -Value "127.0.0.1" -Force
+          Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force
+
+          # Allow WinRM from the WSL 2 virtual network (172.x.x.x subnet)
+          New-NetFirewallRule -DisplayName "WinRM for WSL" -Direction Inbound `
+            -Protocol TCP -LocalPort 5985 -Action Allow -Profile Any
 
           # Create a temporary local admin account for Ansible
           $securePass = ConvertTo-SecureString $ciPassword -AsPlainText -Force
-          New-LocalUser -Name "ansible-ci" -Password $securePass -FullName "Ansible CI" -PasswordNeverExpires
+          New-LocalUser -Name "ansible-ci" -Password $securePass `
+            -FullName "Ansible CI" -PasswordNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "ansible-ci"
 
           Write-Host "WinRM configured on port 5985 (HTTP), CI user created"
 
-      - name: Run Ansible playbook
+      - name: Install Ansible in WSL
         shell: powershell
         run: |
-          $env:PYTHONUTF8 = "1"
-          $env:PYTHONIOENCODING = "utf-8"
-          ansible-playbook playbooks/site.yml `
-            -i ci/inventory/hosts.yml `
-            -e "ansible_user=ansible-ci" `
-            -e "ansible_password=$env:CI_ANSIBLE_PASSWORD" `
-            -v
+          $wslWorkspace = wsl wslpath -u "$env:GITHUB_WORKSPACE"
+          wsl -- bash -c "
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-pip python3-venv
+            python3 -m venv /tmp/ansible-venv
+            /tmp/ansible-venv/bin/pip install -q -r '$wslWorkspace/requirements.txt'
+          "
+
+      - name: Install Ansible collections in WSL
+        shell: powershell
+        run: |
+          $wslWorkspace = wsl wslpath -u "$env:GITHUB_WORKSPACE"
+          wsl -- bash -c "
+            cd '$wslWorkspace'
+            /tmp/ansible-venv/bin/ansible-galaxy collection install -r requirements.yml --collections-path collections
+          "
+
+      - name: Run Ansible playbook from WSL
+        shell: powershell
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
+        run: |
+          $wslWorkspace = wsl wslpath -u "$env:GITHUB_WORKSPACE"
+          # WSL 2 reaches the Windows host via the nameserver IP in resolv.conf
+          $winIp = (wsl -- bash -c "grep '^nameserver' /etc/resolv.conf | head -1 | awk '{print `$2}'").Trim()
+          Write-Host "Windows host IP from WSL: $winIp"
+          $env:WSLENV = "CI_ANSIBLE_PASSWORD"
+          wsl -- bash -c "
+            cd '$wslWorkspace'
+            ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
+            /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
+              -i ci/inventory/hosts.yml \
+              -e ansible_host=$winIp \
+              -e ansible_user=ansible-ci \
+              -e ansible_password=`$CI_ANSIBLE_PASSWORD \
+              -v
+          "
 
       - name: Idempotency check (second run must report changed=0)
         shell: powershell
+        env:
+          CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
         run: |
-          $env:PYTHONUTF8 = "1"
-          $env:PYTHONIOENCODING = "utf-8"
-          $output = ansible-playbook playbooks/site.yml `
-            -i ci/inventory/hosts.yml `
-            -e "ansible_user=ansible-ci" `
-            -e "ansible_password=$env:CI_ANSIBLE_PASSWORD" 2>&1
+          $wslWorkspace = wsl wslpath -u "$env:GITHUB_WORKSPACE"
+          $winIp = (wsl -- bash -c "grep '^nameserver' /etc/resolv.conf | head -1 | awk '{print `$2}'").Trim()
+          $env:WSLENV = "CI_ANSIBLE_PASSWORD"
 
+          $output = wsl -- bash -c "
+            cd '$wslWorkspace'
+            ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
+            /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
+              -i ci/inventory/hosts.yml \
+              -e ansible_host=$winIp \
+              -e ansible_user=ansible-ci \
+              -e ansible_password=`$CI_ANSIBLE_PASSWORD 2>&1
+          "
           $output | ForEach-Object { Write-Host $_ }
 
           if ($LASTEXITCODE -ne 0) {
@@ -184,13 +191,11 @@ jobs:
           }
 
           Write-Host "Idempotency check PASSED (changed=0)"
-        env:
-          CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
 
       - name: Verify IIS responds on port 80
         shell: powershell
         run: |
-          Start-Sleep -Seconds 5  # Give IIS a moment to fully start
+          Start-Sleep -Seconds 5
           try {
             $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 15
             Write-Host "IIS responded with HTTP $($response.StatusCode)"
