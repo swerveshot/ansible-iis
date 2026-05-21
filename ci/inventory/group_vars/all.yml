@@ -21,3 +21,16 @@ iis_dotnet_enabled_versions:
 
 # CI environment label
 otap_environment: "ci"
+
+# Variables required by the role that have no defaults and are normally set
+# in inventory/group_vars/all/main.yml (not loaded when using ci/inventory/)
+server_timezone: "W. Europe Standard Time"
+
+iis_firewall_rules:
+  - name: "IIS HTTP inbound"
+    description: "Allow HTTP traffic to IIS"
+    localport: "80"
+    protocol: TCP
+    direction: in
+    action: allow
+    enabled: true
