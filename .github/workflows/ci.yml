@@ -82,6 +82,7 @@ jobs:
     env:
       ANSIBLE_ROLES_PATH: roles
       ANSIBLE_COLLECTIONS_PATH: collections
+      PYTHONUTF8: 1
 
     steps:
       - uses: actions/checkout@v4
