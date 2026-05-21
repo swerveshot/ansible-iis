@@ -89,11 +89,17 @@ jobs:
       - name: Set UTF-8 encoding for Ansible
         shell: powershell
         run: |
-          $OutputEncoding = [System.Text.Encoding]::UTF8
-          [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-          [System.Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+          # Change the system ANSI code page to UTF-8 (65001).
+          # GetACP() is what Python's locale.getpreferredencoding() reads on Windows.
+          # PYTHONUTF8=1 should override this but does not on the windows-2022 image;
+          # changing the registry is the only reliable fix and takes effect for new processes.
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Nls\CodePage" `
+            -Name "ACP" -Value "65001"
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Nls\CodePage" `
+            -Name "OEMCP" -Value "65001"
           Add-Content -Path $env:GITHUB_ENV -Value "PYTHONUTF8=1"
           Add-Content -Path $env:GITHUB_ENV -Value "PYTHONIOENCODING=utf-8"
+          Write-Host "System code page set to UTF-8 (65001)"
 
       - uses: actions/setup-python@v5
         with:
