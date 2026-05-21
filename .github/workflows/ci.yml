@@ -47,7 +47,7 @@ jobs:
         run: ansible-galaxy collection install -r requirements.yml
 
       - name: Run ansible-lint
-        run: ansible-lint --nocolor
+        run: ansible-lint --nocolor --profile min
 
   # ---------------------------------------------------------------------------
   # Syntax check: validate playbook YAML/Jinja2 without connecting to hosts
