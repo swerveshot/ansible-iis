@@ -1,0 +1,175 @@
+---
+# =============================================================================
+# .github/workflows/ci.yml - GitHub Actions CI pipeline for IIS Ansible role
+# =============================================================================
+# Jobs:
+#   lint        - ansible-lint code quality check (Ubuntu, every push)
+#   syntax      - Ansible syntax validation (Ubuntu, every push)
+#   integration - Full playbook run against a real Windows Server 2022 runner
+#
+# The integration job runs on a windows-2022 GitHub-hosted runner. Ansible
+# runs on the same machine (Python), targeting localhost via WinRM HTTP.
+# A temporary local admin account is created for the duration of the job.
+#
+# CI-specific overrides (no D-drive, single .NET version) are in ci/inventory/.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+env:
+  ANSIBLE_FORCE_COLOR: "1"
+  PY_COLORS: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint: ansible-lint on Ubuntu (fast, no Windows needed)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Run ansible-lint
+        run: ansible-lint --nocolor
+
+  # ---------------------------------------------------------------------------
+  # Syntax check: validate playbook YAML/Jinja2 without connecting to hosts
+  # ---------------------------------------------------------------------------
+  syntax:
+    name: Syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: Ansible syntax check
+        run: ansible-playbook playbooks/site.yml --syntax-check -i ci/inventory/hosts.yml
+
+  # ---------------------------------------------------------------------------
+  # Integration: full playbook run on a real Windows Server 2022 runner
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration test (Windows Server 2022)
+    runs-on: windows-2022
+    needs: [lint, syntax]
+    env:
+      ANSIBLE_ROLES_PATH: roles
+      ANSIBLE_COLLECTIONS_PATH: collections
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        shell: powershell
+        run: pip install -r requirements.txt
+
+      - name: Install Ansible collections
+        shell: powershell
+        run: ansible-galaxy collection install -r requirements.yml --collections-path collections
+
+      # Configure WinRM for HTTP basic auth (safe: ephemeral runner, loopback only)
+      - name: Configure WinRM and create CI test user
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Generate a random password (lives only for this runner job)
+          Add-Type -AssemblyName System.Web
+          $ciPassword = [System.Web.Security.Membership]::GeneratePassword(20, 4)
+          "CI_ANSIBLE_PASSWORD=$ciPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # Enable WinRM with HTTP basic auth for localhost testing
+          winrm quickconfig -force
+          winrm set winrm/config/service/auth '@{Basic="true"}'
+          winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+          Set-Item WSMan:\localhost\Client\TrustedHosts -Value "127.0.0.1" -Force
+
+          # Create a temporary local admin account for Ansible
+          $securePass = ConvertTo-SecureString $ciPassword -AsPlainText -Force
+          New-LocalUser -Name "ansible-ci" -Password $securePass -FullName "Ansible CI" -PasswordNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "ansible-ci"
+
+          Write-Host "WinRM configured on port 5985 (HTTP), CI user created"
+
+      - name: Run Ansible playbook
+        shell: powershell
+        run: |
+          ansible-playbook playbooks/site.yml `
+            -i ci/inventory/hosts.yml `
+            -e "ansible_user=ansible-ci" `
+            -e "ansible_password=$env:CI_ANSIBLE_PASSWORD" `
+            -v
+        env:
+          CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
+
+      - name: Idempotency check (second run must report changed=0)
+        shell: powershell
+        run: |
+          $output = ansible-playbook playbooks/site.yml `
+            -i ci/inventory/hosts.yml `
+            -e "ansible_user=ansible-ci" `
+            -e "ansible_password=$env:CI_ANSIBLE_PASSWORD" 2>&1
+
+          $output | ForEach-Object { Write-Host $_ }
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Playbook failed on second run"
+            exit 1
+          }
+
+          # Sum all 'changed=N' values from the PLAY RECAP
+          $changedValues = [regex]::Matches(($output -join "`n"), 'changed=(\d+)') |
+            ForEach-Object { [int]$_.Groups[1].Value }
+          $totalChanged = ($changedValues | Measure-Object -Sum).Sum
+
+          if ($totalChanged -gt 0) {
+            Write-Error "Idempotency check FAILED: $totalChanged task(s) reported 'changed' on second run"
+            exit 1
+          }
+
+          Write-Host "Idempotency check PASSED (changed=0)"
+        env:
+          CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
+
+      - name: Verify IIS responds on port 80
+        shell: powershell
+        run: |
+          Start-Sleep -Seconds 5  # Give IIS a moment to fully start
+          try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 15
+            Write-Host "IIS responded with HTTP $($response.StatusCode)"
+          } catch {
+            Write-Error "IIS did not respond: $_"
+            exit 1
+          }

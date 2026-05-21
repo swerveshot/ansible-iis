@@ -1,0 +1,23 @@
+---
+# =============================================================================
+# ci/inventory/group_vars/all.yml - CI overrides for GitHub Actions runners
+# =============================================================================
+# GitHub Actions Windows runners have only a C-drive.
+# These overrides redirect all IIS paths from D:\ to C:\ for CI.
+# Production settings remain unchanged in inventory/group_vars/all/main.yml.
+
+iis_data_drive: "C:"
+iis_root_path: "C:\\IIS"
+iis_wwwroot_path: "C:\\IIS\\wwwroot"
+iis_logs_path: "C:\\IIS\\Logs"
+iis_temp_path: "C:\\IIS\\Temp"
+iis_backup_path: "C:\\IIS\\Backups"
+iis_compression_path: "C:\\IIS\\Temp\\Compression"
+iis_temp_download_path: "C:\\Temp\\ansible_downloads"
+
+# Install only .NET 8 LTS in CI to reduce pipeline runtime
+iis_dotnet_enabled_versions:
+  - "8"
+
+# CI environment label
+otap_environment: "ci"

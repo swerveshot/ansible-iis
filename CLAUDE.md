@@ -110,6 +110,30 @@ source ~/.virtualenvs/ansible13/bin/activate
 ansible-lint --nocolor
 ```
 
+## CI/CD pipeline (GitHub Actions)
+
+### Architectuur
+- **lint + syntax** jobs: Ubuntu runner, draaien op elke push
+- **integration** job: `windows-2022` GitHub-hosted runner, draait na lint en syntax
+
+### Hoe de integration job werkt
+De Windows runner configureert WinRM op zichzelf (`127.0.0.1:5985`, HTTP basic, tijdelijke lokale admin). Ansible draait via Python op dezelfde machine en verbindt terug via WinRM. Na de eerste run volgt een idempotency check (tweede run moet `changed=0` rapporteren).
+
+### CI-specifieke overrides (`ci/inventory/`)
+| Override | CI-waarde | Reden |
+|---|---|---|
+| `iis_data_drive` | `C:` | Windows runners hebben geen D:-schijf |
+| Alle `iis_*_path` | `C:\IIS\...` | Volgt uit bovenstaande |
+| `iis_dotnet_enabled_versions` | `["8"]` | Kortere pipeline runtime |
+
+### Lokaal testen
+```bash
+# Lint en syntax (Linux/Mac)
+source ~/.virtualenvs/ansible13/bin/activate
+ansible-lint --nocolor
+ansible-playbook playbooks/site.yml --syntax-check -i ci/inventory/hosts.yml
+```
+
 ## Wat nog niet gebouwd is (mogelijke uitbreidingen)
 - HTTPS binding configuratie (certificaat koppelen aan site)
 - Meerdere websites en app pools per server

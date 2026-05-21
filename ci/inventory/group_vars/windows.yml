@@ -1,0 +1,14 @@
+---
+# =============================================================================
+# ci/inventory/group_vars/windows.yml - WinRM settings for CI (localhost)
+# =============================================================================
+# Uses HTTP basic auth on port 5985 (loopback only, ephemeral runner).
+# Credentials are passed via --extra-vars in the workflow, not stored here.
+
+ansible_connection: winrm
+ansible_winrm_transport: basic
+ansible_winrm_scheme: http
+ansible_port: 5985
+ansible_winrm_server_cert_validation: ignore
+ansible_winrm_operation_timeout_sec: 120
+ansible_winrm_read_timeout_sec: 130

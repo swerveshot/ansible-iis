@@ -39,13 +39,14 @@
           - "=========================================="
       tags: always
 
-    # Check whether the D-drive is available before execution
-    - name: Check whether D-drive is available
+    # Check whether the configured data drive is available before execution
+    - name: Check whether data drive ({{ iis_data_drive }}) is available
       ansible.windows.win_powershell:
         script: |
-          $drive = Get-PSDrive -Name "D" -ErrorAction SilentlyContinue
+          $driveLetter = "{{ iis_data_drive[0] }}"
+          $drive = Get-PSDrive -Name $driveLetter -ErrorAction SilentlyContinue
           if (-not $drive) {
-            Write-Error "D-drive not found! Check the disk layout."
+            Write-Error "Data drive {{ iis_data_drive }} not found! Check the disk layout."
             exit 1
           }
           $freeSpaceGB = [math]::Round($drive.Free / 1GB, 2)
@@ -56,9 +57,9 @@
       register: drive_check
       tags: always
 
-    - name: Show available space on D-drive
+    - name: Show available space on data drive ({{ iis_data_drive }})
       ansible.builtin.debug:
-        msg: "D-drive available: {{ drive_check.result.free_gb }} GB free"
+        msg: "{{ iis_data_drive }} available: {{ drive_check.result.free_gb }} GB free"
       tags: always
 
   # --- Roles ----------------------------------------------------------------
