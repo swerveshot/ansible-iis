@@ -1,0 +1,31 @@
+---
+# =============================================================================
+# roles/iis/meta/main.yml - Role metadata
+# =============================================================================
+
+galaxy_info:
+  role_name: iis
+  author: DevOps Team
+  description: >
+    Installs and configures IIS on Windows Server 2022 with .NET runtimes,
+    URL Rewrite Module, and data segregation to D-drive.
+  company: Organisation Name
+  license: MIT
+
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Windows
+      versions:
+        - "2022"
+
+  galaxy_tags:
+    - windows
+    - iis
+    - dotnet
+    - webserver
+    - microsoft
+
+# Role dependencies: none.
+# Collections are listed in requirements.yml.
+dependencies: []

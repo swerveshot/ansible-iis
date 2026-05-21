@@ -1,0 +1,213 @@
+---
+# =============================================================================
+# roles/iis/tasks/os_requirements.yml - OS preparation
+# =============================================================================
+# Configures the operating system for optimal IIS operation.
+# Tags: os_requirements
+
+# --- Set timezone -----------------------------------------------------------
+- name: Set timezone to {{ server_timezone }}
+  ansible.windows.win_timezone:
+    timezone: "{{ server_timezone }}"
+  tags:
+    - os_requirements
+    - timezone
+
+# --- Create temporary download directory ------------------------------------
+- name: Create temporary download directory on C-drive
+  ansible.windows.win_file:
+    path: "{{ iis_temp_download_path }}"
+    state: directory
+  tags:
+    - os_requirements
+
+# --- Create D-drive directory structure -------------------------------------
+- name: Create IIS directory structure on D-drive
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ iis_root_path }}"
+    - "{{ iis_wwwroot_path }}"
+    - "{{ iis_logs_path }}"
+    - "{{ iis_temp_path }}"
+    - "{{ iis_backup_path }}"
+    - "{{ iis_compression_path }}"
+    # Subdirectory for the Default Web Site
+    - "{{ iis_wwwroot_path }}\\default"
+  tags:
+    - os_requirements
+    - directory_structure
+
+# --- Configure Windows Firewall rules ---------------------------------------
+- name: Configure Windows Firewall rules for IIS
+  community.windows.win_firewall_rule:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    localport: "{{ item.localport }}"
+    protocol: "{{ item.protocol }}"
+    direction: "{{ item.direction }}"
+    action: "{{ item.action }}"
+    enabled: "{{ item.enabled }}"
+    state: present
+  loop: "{{ iis_firewall_rules }}"
+  tags:
+    - os_requirements
+    - firewall
+
+# --- Configure Windows Pagefile ---------------------------------------------
+# Ensure the pagefile is on C:\ and not on D:\ (D:\ is for application data)
+- name: Check whether pagefile is on C-drive
+  ansible.windows.win_powershell:
+    script: |
+      $pagefile = Get-WmiObject Win32_PageFileSetting | Where-Object { $_.Name -notlike "C:\*" }
+      if ($pagefile) {
+        $Ansible.Changed = $true
+        $Ansible.Result = "Pagefile found on: $($pagefile.Name)"
+      } else {
+        $Ansible.Changed = $false
+        $Ansible.Result = "Pagefile correctly configured on C:\"
+      }
+  register: pagefile_check
+  tags:
+    - os_requirements
+    - pagefile
+
+- name: Show pagefile status
+  ansible.builtin.debug:
+    msg: "{{ pagefile_check.result }}"
+  tags:
+    - os_requirements
+    - pagefile
+
+# --- Set power plan ---------------------------------------------------------
+# High performance for web servers (not 'Balanced' or 'Power saver')
+- name: Set power plan to High Performance
+  ansible.windows.win_powershell:
+    script: |
+      $highPerf = Get-WmiObject -Namespace root\cimv2\power -Class Win32_PowerPlan |
+        Where-Object { $_.ElementName -eq "High performance" }
+      if ($highPerf) {
+        $highPerf.Activate()
+        $Ansible.Changed = $true
+        $Ansible.Result = "High Performance power plan activated"
+      } else {
+        $Ansible.Changed = $false
+        $Ansible.Result = "High Performance power plan not found (may already be active)"
+      }
+  register: power_plan_result
+  tags:
+    - os_requirements
+    - power_plan
+
+- name: Show power plan status
+  ansible.builtin.debug:
+    msg: "{{ power_plan_result.result }}"
+  tags:
+    - os_requirements
+    - power_plan
+
+# --- Check Windows Updates --------------------------------------------------
+# Check whether the server is up to date (does NOT install updates automatically)
+- name: Check Windows Update status
+  ansible.windows.win_powershell:
+    script: |
+      $session = New-Object -ComObject Microsoft.Update.Session
+      $searcher = $session.CreateUpdateSearcher()
+      try {
+        $result = $searcher.Search("IsInstalled=0 and Type='Software' and IsHidden=0")
+        $updateCount = $result.Updates.Count
+        $Ansible.Result = @{
+          pending_updates = $updateCount
+          has_pending = ($updateCount -gt 0)
+        }
+        $Ansible.Changed = $false
+      } catch {
+        $Ansible.Result = @{
+          pending_updates = -1
+          has_pending = $false
+          error = $_.Exception.Message
+        }
+        $Ansible.Changed = $false
+      }
+  register: update_check
+  tags:
+    - os_requirements
+    - windows_updates
+
+- name: Warning when there are pending Windows updates
+  ansible.builtin.debug:
+    msg: >
+      WARNING: There are {{ update_check.result.pending_updates }} pending
+      Windows updates. Consider installing them before putting IIS into production.
+  when: update_check.result.has_pending | bool
+  tags:
+    - os_requirements
+    - windows_updates
+
+# --- Check .NET Framework 4.8 -----------------------------------------------
+# Some legacy applications require .NET Framework 4.x
+- name: Check .NET Framework version
+  ansible.windows.win_powershell:
+    script: |
+      $release = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -Name Release).Release
+      # .NET Framework 4.8 = 528040 or higher
+      if ($release -ge 528040) {
+        $Ansible.Result = "NET Framework 4.8+ present (release: $release)"
+        $Ansible.Changed = $false
+      } else {
+        $Ansible.Result = "NET Framework version below 4.8 (release: $release)"
+        $Ansible.Changed = $false
+      }
+  register: dotnet_framework_check
+  tags:
+    - os_requirements
+    - dotnet_framework
+
+- name: Show .NET Framework status
+  ansible.builtin.debug:
+    msg: "{{ dotnet_framework_check.result }}"
+  tags:
+    - os_requirements
+    - dotnet_framework
+
+# --- Enable TLS 1.2/1.3 ----------------------------------------------------
+# Required for modern .NET applications and secure WinRM communication
+- name: Enable TLS 1.2 for SChannel
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.2\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 1 }
+    - { name: DisabledByDefault, data: 0 }
+  tags:
+    - os_requirements
+    - tls
+
+- name: Enable TLS 1.3 for SChannel
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.3\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 1 }
+    - { name: DisabledByDefault, data: 0 }
+  tags:
+    - os_requirements
+    - tls
+
+- name: Disable TLS 1.0 (deprecated protocol)
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 0 }
+    - { name: DisabledByDefault, data: 1 }
+  tags:
+    - os_requirements
+    - tls

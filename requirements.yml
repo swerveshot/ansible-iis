@@ -1,0 +1,37 @@
+---
+# =============================================================================
+# requirements.yml - Ansible Galaxy collection dependencies
+# =============================================================================
+# Install with: ansible-galaxy collection install -r requirements.yml
+#
+# Versions are pinned for deployment reproducibility.
+# Check regularly for updates:
+#   ansible-galaxy collection list
+#   ansible-galaxy collection install -r requirements.yml --upgrade
+
+collections:
+
+  # --- ansible.windows -------------------------------------------------------
+  # Core Windows modules: win_feature, win_package, win_file, win_powershell,
+  # win_regedit, win_service, win_get_url, win_firewall_rule, etc.
+  # See: https://docs.ansible.com/ansible/latest/collections/ansible/windows/
+  - name: ansible.windows
+    version: ">=2.3.0"
+
+  # --- microsoft.iis ---------------------------------------------------------
+  # Official Microsoft IIS collection (replaces the deprecated community.windows
+  # win_iis_* modules). Contains: website, web_app_pool, web_application,
+  # web_binding modules.
+  # See: https://galaxy.ansible.com/ui/repo/published/microsoft/iis/
+  # GitHub: https://github.com/ansible-collections/microsoft.iis
+  - name: microsoft.iis
+    version: ">=1.1.0"
+
+  # --- community.windows -----------------------------------------------------
+  # Extended Windows modules: win_firewall_rule, win_disk_facts,
+  # win_initialize_disk, win_dotnet_ngen, etc.
+  # Note: the win_iis_* modules in this collection are deprecated;
+  # use microsoft.iis instead.
+  # See: https://docs.ansible.com/ansible/latest/collections/community/windows/
+  - name: community.windows
+    version: ">=2.2.0"

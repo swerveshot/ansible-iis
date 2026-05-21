@@ -1,0 +1,47 @@
+# =============================================================================
+# requirements.txt - Python dependencies voor Ansible Windows beheer
+# =============================================================================
+# Installeren met: pip install -r requirements.txt
+#
+# Aanbevolen: gebruik een Python virtual environment
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r requirements.txt
+
+# --- Ansible core -----------------------------------------------------------
+# Minimaal versie 2.16 vereist voor Windows Server 2022 ondersteuning
+ansible-core>=2.16,<2.20
+
+# --- WinRM verbinding -------------------------------------------------------
+# pywinrm: Python library voor WinRM communicatie met Windows hosts
+pywinrm>=0.4.3
+
+# requests: HTTP library (dependency van pywinrm)
+requests>=2.31.0
+
+# --- WinRM authenticatie ----------------------------------------------------
+# NTLM authenticatie (aanbevolen voor werkgroep/niet-domain omgevingen)
+requests-ntlm>=1.2.0
+
+# CredSSP authenticatie (vereist voor dubbele hop scenarios, bijv. UNC paden)
+# Uncomment als CredSSP gebruikt wordt:
+# requests-credssp>=2.0.0
+
+# Kerberos authenticatie (aanbevolen voor Active Directory omgevingen)
+# Uncomment als Kerberos gebruikt wordt en installeer ook:
+#   sudo apt-get install python3-dev libkrb5-dev krb5-user  (Ubuntu/Debian)
+#   sudo yum install python3-devel krb5-devel krb5-workstation  (RHEL/CentOS)
+# pywinrm[kerberos]
+# gssapi>=1.6.0
+
+# --- Ansible Vault ----------------------------------------------------------
+# Cryptography library voor Ansible Vault encryptie
+cryptography>=41.0.0
+
+# --- Overig -----------------------------------------------------------------
+# xmltodict: voor het parsen van WinRM XML responses
+xmltodict>=0.13.0
+
+# Jinja2: templating engine (wordt meegeleverd met ansible-core, maar
+# expliciet vermeld voor duidelijkheid)
+Jinja2>=3.1.0

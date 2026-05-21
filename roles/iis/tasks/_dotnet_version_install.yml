@@ -1,0 +1,110 @@
+---
+# =============================================================================
+# roles/iis/tasks/_dotnet_version_install.yml
+# =============================================================================
+# Installs one .NET version (Hosting Bundle + optional standalone x86 runtime).
+# Called via include_tasks from tasks/main.yml.
+#
+# Expects variable `dotnet_pkg` (dict) with fields:
+#   major           (str)  E.g. "8"
+#   patch           (str)  E.g. "8.0.15"
+#   support_type    (str)  "LTS" or "STS"
+#   eol_date        (str)  E.g. "2026-11-10"
+#   hosting_url     (str)  Full HTTPS download URL
+#   runtime_x86_url (str)  x86 runtime URL
+
+# --- Detect whether this version is already installed ----------------------
+- name: "[.NET {{ dotnet_pkg.major }}] Detect installation"
+  ansible.windows.win_powershell:
+    script: |
+      $major    = "{{ dotnet_pkg.major }}"
+      $installed = $false
+      $version   = $null
+
+      # Primary check: dotnet CLI (fastest)
+      $dotnetExe = "$env:ProgramFiles\dotnet\dotnet.exe"
+      if (Test-Path $dotnetExe) {
+        $match = & $dotnetExe --list-runtimes 2>$null |
+          Where-Object { $_ -match "Microsoft\.NETCore\.App $major\." }
+        if ($match) {
+          $installed = $true
+          $version   = ($match | Select-Object -Last 1) -replace "^Microsoft\.NETCore\.App (\S+).*", '$1'
+        }
+      }
+
+      # Fallback: registry (when dotnet.exe is not yet on PATH)
+      if (-not $installed -and (Test-Path "{{ iis_dotnet_registry_runtimes_x64 }}")) {
+        $keys = (Get-ItemProperty "{{ iis_dotnet_registry_runtimes_x64 }}" -ErrorAction SilentlyContinue).PSObject.Properties |
+          Where-Object { $_.Name -like "$major.*" }
+        if ($keys) {
+          $installed = $true
+          $version   = ($keys | Select-Object -Last 1).Name
+        }
+      }
+
+      $Ansible.Result  = @{ installed = $installed; version = $version }
+      $Ansible.Changed = $false
+  register: dotnet_pkg_check
+
+- name: "[.NET {{ dotnet_pkg.major }}] Status: {{ dotnet_pkg.support_type }} (EOL: {{ dotnet_pkg.eol_date }})"
+  ansible.builtin.debug:
+    msg: >-
+      .NET {{ dotnet_pkg.major }}:
+      {{ 'v' + dotnet_pkg_check.result.version + ' already installed'
+         if dotnet_pkg_check.result.installed
+         else 'not present, will be installed' }}
+
+# --- Download Hosting Bundle ------------------------------------------------
+# The Hosting Bundle includes: Runtime x64, Runtime x86, ASP.NET x64,
+# ASP.NET x86, and the IIS AspNetCoreModuleV2 — all in one installer.
+- name: "[.NET {{ dotnet_pkg.major }}] Download Hosting Bundle"
+  ansible.windows.win_get_url:
+    url: "{{ dotnet_pkg.hosting_url }}"
+    dest: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_pkg.patch }}-win.exe"
+    force: false   # Re-download only if file is missing
+  when: not dotnet_pkg_check.result.installed
+  register: dotnet_pkg_download
+
+# --- Install Hosting Bundle -------------------------------------------------
+- name: "[.NET {{ dotnet_pkg.major }}] Install Hosting Bundle"
+  ansible.windows.win_package:
+    path: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_pkg.patch }}-win.exe"
+    arguments: >-
+      /quiet
+      /norestart
+      OPT_NO_SHAREDFX=0
+      OPT_NO_RUNTIME=0
+      OPT_NO_ASPNETCORE=0
+      /log "{{ iis_temp_download_path }}\\dotnet{{ dotnet_pkg.major }}_install.log"
+    state: present
+  when:
+    - not dotnet_pkg_check.result.installed
+    - dotnet_pkg_download is not failed
+  register: dotnet_pkg_install
+  notify:
+    - "restart iis"
+    - "restart app pools"
+
+# --- Optional standalone x86 Runtime ----------------------------------------
+# The Hosting Bundle already installs x86, but this explicitly validates
+# the x86 installation. Useful for 32-bit applications without a Hosting Bundle.
+# Disable via iis_dotnet_install_individual_x86: false.
+- name: "[.NET {{ dotnet_pkg.major }}] Download x86 Runtime"
+  ansible.windows.win_get_url:
+    url: "{{ dotnet_pkg.runtime_x86_url }}"
+    dest: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_pkg.patch }}-win-x86.exe"
+    force: false
+  when:
+    - iis_dotnet_install_individual_x86 | bool
+    - not dotnet_pkg_check.result.installed
+  register: dotnet_pkg_x86_download
+
+- name: "[.NET {{ dotnet_pkg.major }}] Install x86 Runtime"
+  ansible.windows.win_package:
+    path: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_pkg.patch }}-win-x86.exe"
+    arguments: /quiet /norestart
+    state: present
+  when:
+    - iis_dotnet_install_individual_x86 | bool
+    - not dotnet_pkg_check.result.installed
+    - dotnet_pkg_x86_download is not failed

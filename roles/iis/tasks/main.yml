@@ -1,0 +1,97 @@
+---
+# =============================================================================
+# roles/iis/tasks/main.yml - Task orchestration
+# =============================================================================
+# Imports the individual task files in the correct order.
+# Files with an underscore prefix (_) are helpers, not standalone.
+#
+# Tags:
+#   os_requirements  - OS preparation
+#   iis_features     - IIS Windows features
+#   iis_configure    - IIS configuration (D-drive, logging, app pools)
+#   iis_rewrite      - URL Rewrite Module
+#   dotnet           - All configured .NET versions
+#   dotnet_8         - .NET 8 only
+#   dotnet_9         - .NET 9 only
+#   dotnet_10        - .NET 10 only
+
+- name: Configure OS requirements
+  ansible.builtin.import_tasks: os_requirements.yml
+  tags: [os_requirements]
+
+- name: Install IIS Windows features
+  ansible.builtin.import_tasks: iis_features.yml
+  tags: [iis_features]
+
+- name: Configure IIS
+  ansible.builtin.import_tasks: iis_configure.yml
+  tags: [iis_configure]
+
+- name: Install IIS Rewrite Module
+  ansible.builtin.import_tasks: iis_rewrite.yml
+  tags: [iis_rewrite]
+
+# --- .NET versions ----------------------------------------------------------
+# include_tasks (not import_tasks) so per-version tags work correctly:
+# --tags dotnet_8 runs only the .NET 8 include, not 9 or 10.
+# The when condition validates that the version is in iis_dotnet_enabled_versions.
+
+- name: ".NET 8 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '8') | first).support_type }} install"
+  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  vars:
+    dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '8') | first }}"
+  when: "'8' in iis_dotnet_enabled_versions"
+  tags: [dotnet, dotnet_8]
+
+- name: ".NET 9 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '9') | first).support_type }} install"
+  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  vars:
+    dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '9') | first }}"
+  when: "'9' in iis_dotnet_enabled_versions"
+  tags: [dotnet, dotnet_9]
+
+- name: ".NET 10 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '10') | first).support_type }} install"
+  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  vars:
+    dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '10') | first }}"
+  when: "'10' in iis_dotnet_enabled_versions"
+  tags: [dotnet, dotnet_10]
+
+# --- .NET post-installation -------------------------------------------------
+
+- name: Flush handlers after .NET installation
+  ansible.builtin.meta: flush_handlers
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+
+- name: Run .NET ngen after new installations (recompiles assemblies for faster startup)
+  community.windows.win_dotnet_ngen:
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+
+- name: Show installed .NET runtimes overview
+  ansible.windows.win_powershell:
+    script: |
+      $result = @{ x64 = @(); x86 = @() }
+      $exe64 = "$env:ProgramFiles\dotnet\dotnet.exe"
+      $exe86 = "${env:ProgramFiles(x86)}\dotnet\dotnet.exe"
+      if (Test-Path $exe64) { $result.x64 = & $exe64 --list-runtimes 2>$null }
+      if (Test-Path $exe86) { $result.x86 = & $exe86 --list-runtimes 2>$null }
+      $Ansible.Result  = $result
+      $Ansible.Changed = $false
+  register: dotnet_final_verify
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+
+- name: Runtimes x64
+  ansible.builtin.debug:
+    msg: "{{ dotnet_final_verify.result.x64 | default(['(none)']) }}"
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+
+- name: Runtimes x86
+  ansible.builtin.debug:
+    msg: "{{ dotnet_final_verify.result.x86 | default(['(none)']) }}"
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+
+- name: Clean up temporary installation files
+  ansible.windows.win_file:
+    path: "{{ iis_temp_download_path }}"
+    state: absent
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10, dotnet_cleanup]

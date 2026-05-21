@@ -1,0 +1,91 @@
+---
+# =============================================================================
+# playbooks/site.yml - Main playbook for IIS Windows deployment
+# =============================================================================
+# Usage:
+#   Full run:        ansible-playbook playbooks/site.yml
+#   Per environment: ansible-playbook playbooks/site.yml -l otap_p
+#   With tags:       ansible-playbook playbooks/site.yml --tags dotnet,iis_rewrite
+#   Dry-run:         ansible-playbook playbooks/site.yml --check --diff
+#
+# Available tags:
+#   os_requirements  - Check and configure OS requirements
+#   iis_features     - Install IIS Windows features
+#   iis_configure    - Configure IIS (paths, logging, app pools)
+#   iis_rewrite      - Install URL Rewrite Module 2.1
+#   dotnet           - Install all .NET versions
+#   dotnet_8         - Install .NET 8 LTS
+#   dotnet_9         - Install .NET 9 STS
+#   dotnet_10        - Install .NET 10 LTS
+
+- name: Configure IIS on Windows Server 2022
+  hosts: windows
+  gather_facts: true
+
+  # --- Connection settings --------------------------------------------------
+  # All connection settings are in group_vars/windows/main.yml
+
+  # --- Pre-tasks ------------------------------------------------------------
+  pre_tasks:
+    - name: Show deployment information
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Host:        {{ inventory_hostname }}"
+          - "Environment: {{ otap_environment | default('unknown') }}"
+          - "Data drive:  {{ iis_data_drive }}"
+          - "IIS root:    {{ iis_wwwroot_path }}"
+          - "Logs:        {{ iis_logs_path }}"
+          - "=========================================="
+      tags: always
+
+    # Check whether the D-drive is available before execution
+    - name: Check whether D-drive is available
+      ansible.windows.win_powershell:
+        script: |
+          $drive = Get-PSDrive -Name "D" -ErrorAction SilentlyContinue
+          if (-not $drive) {
+            Write-Error "D-drive not found! Check the disk layout."
+            exit 1
+          }
+          $freeSpaceGB = [math]::Round($drive.Free / 1GB, 2)
+          $Ansible.Result = @{
+            free_gb   = $freeSpaceGB
+            available = $true
+          }
+      register: drive_check
+      tags: always
+
+    - name: Show available space on D-drive
+      ansible.builtin.debug:
+        msg: "D-drive available: {{ drive_check.result.free_gb }} GB free"
+      tags: always
+
+  # --- Roles ----------------------------------------------------------------
+  roles:
+    - role: iis
+      # The iis role contains all tasks for IIS installation and configuration.
+      # Tags are set at task level within the role.
+
+  # --- Post-tasks -----------------------------------------------------------
+  post_tasks:
+    - name: Check IIS service status after installation
+      ansible.windows.win_service:
+        name: W3SVC
+      register: iis_service_status
+      tags: always
+
+    - name: Show IIS service status
+      ansible.builtin.debug:
+        msg: "IIS (W3SVC) status: {{ iis_service_status.state }}"
+      tags: always
+
+    - name: Deployment complete
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Deployment COMPLETE"
+          - "Host: {{ inventory_hostname }}"
+          - "IIS status: {{ iis_service_status.state }}"
+          - "=========================================="
+      tags: always

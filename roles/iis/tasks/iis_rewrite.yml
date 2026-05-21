@@ -1,0 +1,222 @@
+---
+# =============================================================================
+# roles/iis/tasks/iis_rewrite.yml - IIS URL Rewrite Module 2.1 installation
+# =============================================================================
+# Installs the Microsoft URL Rewrite Module 2.1 for IIS.
+# Enables IIS to rewrite URLs, create redirects, and define reverse proxy rules.
+#
+# More info: https://www.iis.net/downloads/microsoft/url-rewrite
+# Tags: iis_rewrite
+
+# --- Check whether Rewrite Module is already installed ---------------------
+- name: Check whether IIS URL Rewrite Module is already installed
+  ansible.windows.win_powershell:
+    script: |
+      # Check whether the module MSI is already installed via registry
+      $installed = Get-WmiObject -Class Win32_Product -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "*URL Rewrite*" }
+
+      # Alternative, faster method: check IIS modules
+      $iisModuleCheck = $false
+      try {
+        Import-Module WebAdministration -ErrorAction Stop
+        $iisModule = Get-WebGlobalModule -Name "RewriteModule" -ErrorAction SilentlyContinue
+        if ($iisModule) {
+          $iisModuleCheck = $true
+        }
+      } catch {}
+
+      if ($installed -or $iisModuleCheck) {
+        $Ansible.Result = @{
+          installed = $true
+          method    = if ($iisModuleCheck) { "IIS module" } else { "MSI" }
+        }
+      } else {
+        $Ansible.Result = @{
+          installed = $false
+          method    = $null
+        }
+      }
+      $Ansible.Changed = $false
+  register: rewrite_module_check
+  tags:
+    - iis_rewrite
+
+- name: Show Rewrite Module installation status
+  ansible.builtin.debug:
+    msg: >
+      URL Rewrite Module:
+      {{ 'already installed' if rewrite_module_check.result.installed else 'needs to be installed' }}
+  tags:
+    - iis_rewrite
+
+# --- Download Rewrite Module MSI -------------------------------------------
+- name: Download IIS URL Rewrite Module MSI to temporary directory
+  ansible.windows.win_get_url:
+    url: "{{ iis_rewrite_module_url }}"
+    dest: "{{ iis_temp_download_path }}\\{{ iis_rewrite_module_filename }}"
+    checksum: "{{ iis_rewrite_module_checksum }}"
+    checksum_algorithm: sha256
+    # Re-download only if file is missing or checksum does not match
+    force: false
+  when: not rewrite_module_check.result.installed
+  register: rewrite_download
+  tags:
+    - iis_rewrite
+
+# --- Install Rewrite Module via MSI ----------------------------------------
+- name: Install IIS URL Rewrite Module 2.1
+  ansible.windows.win_package:
+    path: "{{ iis_temp_download_path }}\\{{ iis_rewrite_module_filename }}"
+    # Silent MSI installation with logging
+    arguments: >-
+      /quiet
+      /norestart
+      /log "{{ iis_temp_download_path }}\\rewrite_install.log"
+    state: present
+  when:
+    - not rewrite_module_check.result.installed
+    - rewrite_download is not failed
+  register: rewrite_install
+  notify: "restart iis"
+  tags:
+    - iis_rewrite
+
+# --- Show installation log on failure --------------------------------------
+- name: Retrieve installation log on failure
+  ansible.windows.win_powershell:
+    script: |
+      $logPath = "{{ iis_temp_download_path }}\\rewrite_install.log"
+      if (Test-Path $logPath) {
+        $log = Get-Content $logPath -Tail 30
+        $Ansible.Result = $log -join "`n"
+      } else {
+        $Ansible.Result = "Log file not found"
+      }
+      $Ansible.Changed = $false
+  when: rewrite_install is defined and rewrite_install is failed
+  register: rewrite_log
+  tags:
+    - iis_rewrite
+
+- name: Show installation log on failure
+  ansible.builtin.debug:
+    msg: "{{ rewrite_log.result }}"
+  when: rewrite_install is defined and rewrite_install is failed
+  tags:
+    - iis_rewrite
+
+# --- Flush handlers (IIS restart after Rewrite install) --------------------
+- name: Restart IIS after Rewrite Module installation
+  ansible.builtin.meta: flush_handlers
+  when: rewrite_install is defined and rewrite_install.changed
+  tags:
+    - iis_rewrite
+
+# --- Verify installation ---------------------------------------------------
+- name: Verify URL Rewrite Module installation in IIS
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+
+      $module = Get-WebGlobalModule -Name "RewriteModule" -ErrorAction SilentlyContinue
+
+      if ($module) {
+        $Ansible.Result = @{
+          installed = $true
+          image     = $module.image
+          name      = $module.name
+        }
+      } else {
+        $Ansible.Result = @{
+          installed = $false
+          image     = $null
+          name      = $null
+        }
+      }
+      $Ansible.Changed = $false
+  register: rewrite_verify
+  tags:
+    - iis_rewrite
+
+- name: Show URL Rewrite Module verification result
+  ansible.builtin.debug:
+    msg:
+      - "URL Rewrite Module installed: {{ rewrite_verify.result.installed }}"
+      - "Module name: {{ rewrite_verify.result.name | default('N/A') }}"
+      - "DLL path: {{ rewrite_verify.result.image | default('N/A') }}"
+  tags:
+    - iis_rewrite
+
+# --- Fail on unsuccessful installation -------------------------------------
+- name: Fail if URL Rewrite Module is not installed
+  ansible.builtin.fail:
+    msg: >
+      The IIS URL Rewrite Module could not be verified.
+      Check the installation log at {{ iis_temp_download_path }}\rewrite_install.log
+  when: not rewrite_verify.result.installed
+  tags:
+    - iis_rewrite
+
+# --- Create example rewrite rule (optional) --------------------------------
+# Adjust to your specific needs or remove if not required
+- name: Create example URL Rewrite rule (HTTPS redirect)
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+
+      $siteName = "{{ iis_default_site_name }}"
+      $ruleName = "HTTP to HTTPS Redirect"
+
+      # Check whether the rule already exists
+      $existingRule = Get-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+        -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']" `
+        -name "name" -ErrorAction SilentlyContinue
+
+      if (-not $existingRule) {
+        # Add HTTPS redirect as example
+        Add-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules" `
+          -name "." `
+          -value @{
+            name           = $ruleName
+            patternSyntax  = "ECMAScript"
+            stopProcessing = "True"
+          }
+
+        # Match on everything
+        Set-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']/match" `
+          -name "url" -value "(.*)"
+
+        # Condition: only for HTTP (not HTTPS)
+        Add-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']/conditions" `
+          -name "." `
+          -value @{
+            input      = "{HTTPS}"
+            pattern    = "off"
+            ignoreCase = "true"
+          }
+
+        # Action: redirect to HTTPS
+        Set-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']/action" `
+          -name "type" -value "Redirect"
+        Set-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']/action" `
+          -name "url" -value "https://{HTTP_HOST}/{R:1}"
+        Set-WebConfigurationProperty -pspath "MACHINE/WEBROOT/APPHOST/$siteName" `
+          -filter "system.webServer/rewrite/rules/rule[@name='$ruleName']/action" `
+          -name "redirectType" -value "Permanent"
+
+        $Ansible.Changed = $true
+        $Ansible.Result = "HTTPS redirect rule created"
+      } else {
+        $Ansible.Changed = $false
+        $Ansible.Result = "Rule already existed"
+      }
+  # To skip this task: add --skip-tags iis_rewrite_example
+  tags:
+    - iis_rewrite
+    - iis_rewrite_example

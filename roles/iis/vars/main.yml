@@ -1,0 +1,18 @@
+---
+# =============================================================================
+# roles/iis/vars/main.yml - Internal role constants (not intended to be overridden)
+# =============================================================================
+# Contains only technical constants: public Microsoft paths and registry keys.
+# No environment-specific values, no credentials, no internal hostnames.
+
+# --- IIS URL Rewrite Module 2.1 ---------------------------------------------
+# Official Microsoft download (stable URL, does not change per patch)
+# More info: https://www.iis.net/downloads/microsoft/url-rewrite
+iis_rewrite_module_url: "https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi"
+iis_rewrite_module_checksum: "sha256:0E7CA0B1879FFE6ACE69AD5A2B2E91F2A84BFB9E50884DA44F97D9CB71D5A862"
+iis_rewrite_module_filename: "rewrite_amd64_en-US.msi"
+
+# --- .NET registry detection paths ------------------------------------------
+# Public Microsoft registry structure, no environment-specific information
+iis_dotnet_registry_runtimes_x64: 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App'
+iis_dotnet_registry_runtimes_x86: 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x86\sharedfx\Microsoft.NETCore.App'

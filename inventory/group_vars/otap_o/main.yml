@@ -1,0 +1,20 @@
+---
+# =============================================================================
+# inventory/group_vars/otap_o/main.yml - Development
+# =============================================================================
+otap_environment: "development"
+otap_environment_short: "o"
+
+# All versions available in development (developers can test every version)
+iis_dotnet_enabled_versions:
+  - "8"
+  - "9"
+  - "10"
+
+# Extended logging in development for debugging
+iis_log_flags: >-
+  Date,Time,ClientIP,UserName,SiteName,ComputerName,ServerIP,Method,UriStem,UriQuery,
+  HttpStatus,Win32Status,BytesSent,BytesRecv,TimeTaken,ProtocolVersion,Host,UserAgent,
+  Cookie,Referer,ServerPort
+iis_allow_http: true
+iis_allow_https: true

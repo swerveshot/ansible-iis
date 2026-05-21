@@ -1,0 +1,108 @@
+---
+# =============================================================================
+# roles/iis/defaults/main.yml - Default role values (lowest priority)
+# =============================================================================
+# All variables here are intended to be overridden via:
+#   inventory/group_vars/, host_vars/, or --extra-vars
+
+# --- IIS Windows features ---------------------------------------------------
+iis_features:
+  - Web-Server
+  - Web-WebServer
+  - Web-Common-Http
+  - Web-Default-Doc
+  - Web-Dir-Browsing
+  - Web-Http-Errors
+  - Web-Static-Content
+  - Web-Http-Redirect
+  - Web-Health
+  - Web-Http-Logging
+  - Web-Custom-Logging
+  - Web-Log-Libraries
+  - Web-Request-Monitor
+  - Web-Http-Tracing
+  - Web-Performance
+  - Web-Stat-Compression
+  - Web-Dyn-Compression
+  - Web-Security
+  - Web-Filtering
+  - Web-Basic-Auth
+  - Web-Windows-Auth
+  - Web-Digest-Auth
+  - Web-IP-Security
+  - Web-Url-Auth
+  - Web-App-Dev
+  - Web-Asp-Net45
+  - Web-Net-Ext45
+  - Web-ISAPI-Ext
+  - Web-ISAPI-Filter
+  - Web-Includes
+  - Web-WebSockets
+  - Web-Mgmt-Tools
+  - Web-Mgmt-Console
+  - Web-Mgmt-Compat
+  - Web-Scripting-Tools
+  - Web-Mgmt-Service
+  - NET-Framework-45-Core
+  - NET-Framework-45-ASPNET
+
+# --- IIS Application Pools --------------------------------------------------
+iis_app_pools:
+  - name: "DefaultAppPool"
+    managed_runtime_version: ""   # Empty = No Managed Code (.NET Core / .NET 5+)
+    managed_pipeline_mode: "Integrated"
+    state: started
+    attributes:
+      recycling.periodicRestart.time: "00:00:00"
+      processModel.idleTimeout: "00:20:00"
+      processModel.loadUserProfile: "true"
+      failure.rapidFailProtection: "true"
+      failure.rapidFailProtectionMaxCrashes: "5"
+
+# --- IIS general settings ---------------------------------------------------
+iis_default_site_name: "Default Web Site"
+iis_default_app_pool: "DefaultAppPool"
+iis_http_port: 80
+iis_https_port: 443
+iis_log_format: "W3C"
+iis_log_period: "Daily"
+
+# --- IIS Rewrite Module -----------------------------------------------------
+iis_install_rewrite_module: true
+
+# --- .NET versions ----------------------------------------------------------
+# Which major versions are installed. Override per environment in
+# group_vars/otap_*/main.yml to exclude a version.
+# Lifecycle (May 2026): 8=LTS(EOL Nov'26), 9=STS(EOL Nov'26), 10=LTS(EOL Nov'28)
+iis_dotnet_enabled_versions:
+  - "8"
+  - "9"
+  - "10"
+
+# Download definition per .NET version.
+# Update on new patch releases: https://dotnet.microsoft.com/download/dotnet
+# The Hosting Bundle installs: Runtime x64+x86, ASP.NET x64+x86, IIS module.
+iis_dotnet_versions:
+  - major: "8"
+    patch: "8.0.15"
+    support_type: "LTS"
+    eol_date: "2026-11-10"
+    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/b6e145e8-8f5e-4b38-9d35-e2e60a892d0d/e8abfc5e07ac98f8fe54a4d00e3bab42/dotnet-hosting-8.0.15-win.exe" # noqa: yaml[line-length]
+    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-8.0.15-win-x86.exe"
+
+  - major: "9"
+    patch: "9.0.6"
+    support_type: "STS"
+    eol_date: "2026-11-10"
+    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-hosting-9.0.6-win.exe"
+    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-9.0.6-win-x86.exe"
+
+  - major: "10"
+    patch: "10.0.6"
+    support_type: "LTS"
+    eol_date: "2028-11-14"
+    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-hosting-10.0.6-win.exe"
+    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-10.0.6-win-x86.exe"
+
+# Install x86 runtime separately alongside the Hosting Bundle (for explicit 32-bit verification)
+iis_dotnet_install_individual_x86: true

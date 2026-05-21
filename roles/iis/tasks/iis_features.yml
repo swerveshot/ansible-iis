@@ -1,0 +1,83 @@
+---
+# =============================================================================
+# roles/iis/tasks/iis_features.yml - IIS Windows features installation
+# =============================================================================
+# Installs all required IIS Windows features in a single win_feature call
+# for better performance.
+# Tags: iis_features
+
+# --- Install IIS features ---------------------------------------------------
+# All features are installed in one task (more efficient than looping).
+# The feature list is defined in roles/iis/defaults/main.yml
+- name: Install IIS Windows features
+  ansible.windows.win_feature:
+    name: "{{ iis_features }}"
+    state: present
+    include_management_tools: true
+    include_sub_features: true
+  register: iis_feature_install
+  tags:
+    - iis_features
+
+# --- Check whether a reboot is required ------------------------------------
+- name: Check whether Windows reboot is required after feature installation
+  ansible.builtin.debug:
+    msg: >
+      Windows feature installation requires a reboot.
+      The server will now be restarted.
+  when: iis_feature_install.reboot_required | bool
+  tags:
+    - iis_features
+
+- name: Reboot server if required after feature installation
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+    connect_timeout: 60
+    post_reboot_delay: 30
+    msg: "Reboot required after IIS feature installation"
+  when: iis_feature_install.reboot_required | bool
+  tags:
+    - iis_features
+
+# --- Configure IIS service --------------------------------------------------
+- name: Set IIS (W3SVC) to start automatically
+  ansible.windows.win_service:
+    name: W3SVC
+    start_mode: auto
+    state: started
+  tags:
+    - iis_features
+
+- name: Set Web Management Service (WMSvc) to start automatically
+  ansible.windows.win_service:
+    name: WMSvc
+    start_mode: auto
+    state: started
+  tags:
+    - iis_features
+
+# --- Verify IIS installation ------------------------------------------------
+- name: Verify IIS installation via PowerShell
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $sites = Get-Website
+      $appPools = Get-ChildItem IIS:\AppPools
+      $Ansible.Result = @{
+        site_count     = $sites.Count
+        app_pool_count = $appPools.Count
+        iis_version    = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\InetStp" -Name VersionString).VersionString
+      }
+      $Ansible.Changed = $false
+  register: iis_verify
+  tags:
+    - iis_features
+
+- name: Show IIS verification result
+  ansible.builtin.debug:
+    msg:
+      - "IIS version:       {{ iis_verify.result.iis_version }}"
+      - "Number of sites:   {{ iis_verify.result.site_count }}"
+      - "Number of AppPools: {{ iis_verify.result.app_pool_count }}"
+  tags:
+    - iis_features

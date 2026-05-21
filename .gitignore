@@ -1,0 +1,31 @@
+# Ansible vault bestanden (bevatten credentials — nooit in git)
+vault.yml
+**/vault.yml
+
+# Ansible retry bestanden
+*.retry
+
+# Ansible verzamelde facts
+.ansible/
+
+# Log bestanden
+*.log
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Claude Code lokale instellingen
+.claude/
+
+# Editor
+.vscode/settings.json
+*.swp
+*~

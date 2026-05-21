@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# vault.yml.example - EXAMPLE for vault.yml (this file may be committed to git)
+# =============================================================================
+# Copy this file to vault.yml and fill in the actual values:
+#   cp vault.yml.example vault.yml
+#   ansible-vault encrypt vault.yml
+#
+# vault.yml is listed in .gitignore and must NEVER be committed.
+
+vault_ansible_user: "replace_with_service_account_name"
+vault_ansible_password: "replace_with_password"

@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# roles/iis/handlers/main.yml - Handlers for service restarts
+# =============================================================================
+# Handlers only execute when a task reports 'changed'.
+# They run at the end of a play, or after a 'flush_handlers' meta task.
+
+# --- IIS service handlers ---------------------------------------------------
+
+- name: Restart IIS
+  ansible.windows.win_service:
+    name: W3SVC
+    state: restarted
+  listen: "restart iis"
+
+- name: Stop IIS
+  ansible.windows.win_service:
+    name: W3SVC
+    state: stopped
+  listen: "stop iis"
+
+- name: Start IIS
+  ansible.windows.win_service:
+    name: W3SVC
+    state: started
+  listen: "start iis"
+
+# --- Web Management Service handler -----------------------------------------
+- name: Restart Web Management Service
+  ansible.windows.win_service:
+    name: WMSvc
+    state: restarted
+  listen: "restart wmsvc"
+
+# --- Application pools restart via PowerShell -------------------------------
+# Required after .NET installation to load new runtimes
+- name: Restart all Application Pools
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration
+      $pools = Get-ChildItem IIS:\AppPools
+      foreach ($pool in $pools) {
+        if ($pool.State -eq 'Started') {
+          Write-Host "Restarting App Pool: $($pool.Name)"
+          Restart-WebAppPool -Name $pool.Name
+        }
+      }
+  listen: "restart app pools"
+
+# --- Windows restart --------------------------------------------------------
+# Use only when absolutely necessary.
+# Combined with wait_for_connection to wait until the server is back online.
+- name: Restart Windows Server
+  ansible.windows.win_reboot:
+    reboot_timeout: 600       # Maximum 10 minutes to wait for restart
+    connect_timeout: 60       # Maximum 60 seconds to wait for connection
+    post_reboot_delay: 30     # 30 seconds after restart for stability
+    msg: "Server restarted by Ansible IIS configuration"
+  listen: "restart server"

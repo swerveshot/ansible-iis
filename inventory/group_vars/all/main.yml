@@ -1,0 +1,62 @@
+---
+# =============================================================================
+# inventory/group_vars/all/main.yml - Global variables for all hosts
+# =============================================================================
+# These variables apply to ALL hosts in all environments.
+# Environment-specific overrides are in the otap_*/main.yml files.
+
+# --- Timezone ----------------------------------------------------------------
+# Timezone for the target server (Windows timezone name)
+server_timezone: "W. Europe Standard Time"
+
+# --- IIS disk layout --------------------------------------------------------
+# OS is on C:\, all IIS data on D:\ (as required)
+iis_data_drive: "D:"
+
+# Directory structure on the D-drive
+iis_root_path: "D:\\IIS"
+iis_wwwroot_path: "D:\\IIS\\wwwroot"
+iis_logs_path: "D:\\IIS\\Logs"
+iis_temp_path: "D:\\IIS\\Temp"
+iis_backup_path: "D:\\IIS\\Backups"
+iis_compression_path: "D:\\IIS\\Temp\\Compression"
+
+# --- IIS general settings ---------------------------------------------------
+# Name of the default website
+iis_default_site_name: "Default Web Site"
+
+# Default application pool name
+iis_default_app_pool: "DefaultAppPool"
+
+# Default HTTP port
+iis_http_port: 80
+
+# Default HTTPS port
+iis_https_port: 443
+
+# --- IIS logging settings ---------------------------------------------------
+iis_log_format: "W3C"
+iis_log_period: "Daily"
+
+# --- Windows Firewall settings ----------------------------------------------
+# Allow HTTP and HTTPS traffic through Windows Firewall
+iis_firewall_rules:
+  - name: "IIS HTTP inbound"
+    description: "Allow HTTP traffic to IIS"
+    localport: "80"
+    protocol: TCP
+    direction: in
+    action: allow
+    enabled: true
+
+  - name: "IIS HTTPS inbound"
+    description: "Allow HTTPS traffic to IIS"
+    localport: "443"
+    protocol: TCP
+    direction: in
+    action: allow
+    enabled: true
+
+# --- Temporary download location --------------------------------------------
+# Temporary directory on the target server for installation files
+iis_temp_download_path: "C:\\Temp\\ansible_downloads"

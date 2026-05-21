@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# inventory/group_vars/otap_t/main.yml - Test
+# =============================================================================
+otap_environment: "test"
+otap_environment_short: "t"
+
+iis_dotnet_enabled_versions:
+  - "8"
+  - "9"
+  - "10"
+
+iis_log_flags: "Date,Time,ClientIP,UserName,SiteName,ServerIP,Method,UriStem,UriQuery,HttpStatus,Win32Status,BytesSent,BytesRecv,TimeTaken"
+iis_allow_http: true
+iis_allow_https: true

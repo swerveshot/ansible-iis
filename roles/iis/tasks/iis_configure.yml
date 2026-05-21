@@ -1,0 +1,195 @@
+---
+# =============================================================================
+# roles/iis/tasks/iis_configure.yml - IIS configuration
+# =============================================================================
+# Configures IIS: log/temp paths to D-drive, app pools, default site,
+# basic security hardening. Uses microsoft.iis collection.
+# Tags: iis_configure
+
+# --- IIS global log and compression settings --------------------------------
+# Three related settings in one PowerShell call for efficiency
+# and atomic change (all succeed or nothing changes).
+- name: Configure IIS global log and compression settings to D-drive
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $changed = $false
+
+      $settings = @(
+        @{
+          filter = "system.applicationHost/sites/siteDefaults/logFile"
+          props  = @{
+            directory = "{{ iis_logs_path }}"
+            logFormat = "{{ iis_log_format }}"
+            period    = "{{ iis_log_period }}"
+          }
+        },
+        @{
+          filter = "system.webServer/httpCompression"
+          props  = @{ directory = "{{ iis_compression_path }}" }
+        }
+      )
+
+      foreach ($setting in $settings) {
+        foreach ($prop in $setting.props.GetEnumerator()) {
+          $current = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+            -filter $setting.filter -name $prop.Key).Value
+          if ($current -ne $prop.Value) {
+            Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+              -filter $setting.filter -name $prop.Key -value $prop.Value
+            $changed = $true
+          }
+        }
+      }
+      $Ansible.Changed = $changed
+  notify: "restart iis"
+  tags:
+    - iis_configure
+    - iis_logging
+
+# --- Default Application Pool configuration ---------------------------------
+- name: Configure Default Application Pool
+  microsoft.iis.web_app_pool:
+    name: "{{ iis_default_app_pool }}"
+    state: started
+    attributes:
+      managedRuntimeVersion: ""        # Empty = No Managed Code (.NET Core / .NET 5+)
+      managedPipelineMode: Integrated
+      recycling.periodicRestart.time: "00:00:00"
+      processModel.idleTimeout: "00:20:00"
+      processModel.loadUserProfile: "true"
+      failure.rapidFailProtection: "true"
+      failure.rapidFailProtectionMaxCrashes: "5"
+  tags:
+    - iis_configure
+    - app_pools
+
+# --- Default Web Site configuration -----------------------------------------
+- name: Configure Default Web Site (path to D-drive, app pool)
+  microsoft.iis.website:
+    name: "{{ iis_default_site_name }}"
+    state: started
+    physical_path: "{{ iis_wwwroot_path }}\\default"
+    application_pool: "{{ iis_default_app_pool }}"
+    bindings:
+      set:
+        - ip: "*"
+          port: "{{ iis_http_port }}"
+          protocol: http
+  notify: "restart iis"
+  tags:
+    - iis_configure
+    - default_site
+
+# --- Site-specific log directory --------------------------------------------
+- name: Create and configure log directory for Default Web Site
+  tags:
+    - iis_configure
+    - iis_logging
+  block:
+    - name: Create log directory for Default Web Site
+      ansible.windows.win_file:
+        path: "{{ iis_logs_path }}\\default"
+        state: directory
+
+    - name: Set log directory for Default Web Site
+      ansible.windows.win_powershell:
+        script: |
+          Import-Module WebAdministration -ErrorAction Stop
+          $current = (Get-ItemProperty "IIS:\Sites\{{ iis_default_site_name }}" -name logFile.directory).Value
+          $new     = "{{ iis_logs_path }}\\default"
+          if ($current -ne $new) {
+            Set-ItemProperty "IIS:\Sites\{{ iis_default_site_name }}" -name logFile.directory -value $new
+            $Ansible.Changed = $true
+          } else {
+            $Ansible.Changed = $false
+          }
+
+# --- Security: request filtering --------------------------------------------
+# Adjust limits for modern applications; hide version information.
+- name: Configure IIS security settings
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $changed = $false
+      $pspath  = 'MACHINE/WEBROOT/APPHOST'
+
+      # Request limits (URL length, query string, content)
+      $limits = @{
+        maxUrl                  = 4096
+        maxQueryString          = 2048
+        maxAllowedContentLength = 31457280  # 30 MB
+      }
+      foreach ($limit in $limits.GetEnumerator()) {
+        $current = (Get-WebConfigurationProperty -pspath $pspath `
+          -filter "system.webServer/security/requestFiltering/requestLimits" `
+          -name $limit.Key).Value
+        if ($current -ne $limit.Value) {
+          Set-WebConfigurationProperty -pspath $pspath `
+            -filter "system.webServer/security/requestFiltering/requestLimits" `
+            -name $limit.Key -value $limit.Value
+          $changed = $true
+        }
+      }
+
+      # Remove X-Powered-By header (leaks technology information)
+      $xpb = Get-WebConfigurationProperty -pspath $pspath `
+        -filter "system.webServer/httpProtocol/customHeaders" -name "." |
+        Where-Object { $_.Value.name -eq "X-Powered-By" }
+      if ($xpb) {
+        Remove-WebConfigurationProperty -pspath $pspath `
+          -filter "system.webServer/httpProtocol/customHeaders" `
+          -name "." -AtElement @{name='X-Powered-By'}
+        $changed = $true
+      }
+
+      $Ansible.Changed = $changed
+  tags:
+    - iis_configure
+    - iis_security
+
+# --- Hide server response header (registry) ---------------------------------
+- name: Disable IIS server version header via registry
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\HTTP\\Parameters"
+    name: "DisableServerHeader"
+    data: 1
+    type: dword
+  notify: "restart iis"
+  tags:
+    - iis_configure
+    - iis_security
+
+# --- Flush handlers ---------------------------------------------------------
+- name: Flush handlers after IIS configuration
+  ansible.builtin.meta: flush_handlers
+  tags: [iis_configure]
+
+# --- Verification -----------------------------------------------------------
+- name: Verify IIS configuration
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $site    = Get-Website -Name "{{ iis_default_site_name }}"
+      $logDir  = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+        -filter "system.applicationHost/sites/siteDefaults/logFile" -name "directory").Value
+      $compDir = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+        -filter "system.webServer/httpCompression" -name "directory").Value
+      $Ansible.Result  = @{
+        site_path    = $site.PhysicalPath
+        site_state   = $site.State
+        log_dir      = $logDir
+        compress_dir = $compDir
+      }
+      $Ansible.Changed = $false
+  register: iis_verify
+  tags: [iis_configure]
+
+- name: IIS configuration summary
+  ansible.builtin.debug:
+    msg:
+      - "Site path:        {{ iis_verify.result.site_path }}"
+      - "Site state:       {{ iis_verify.result.site_state }}"
+      - "Log directory:    {{ iis_verify.result.log_dir }}"
+      - "Compression temp: {{ iis_verify.result.compress_dir }}"
+  tags: [iis_configure]
