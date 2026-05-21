@@ -12,6 +12,9 @@
 # Minimaal versie 2.16 vereist voor Windows Server 2022 ondersteuning
 ansible-core>=2.16,<2.20
 
+# --- Ansible lint -----------------------------------------------------------
+ansible-lint>=24.0
+
 # --- WinRM verbinding -------------------------------------------------------
 # pywinrm: Python library voor WinRM communicatie met Windows hosts
 pywinrm>=0.4.3
