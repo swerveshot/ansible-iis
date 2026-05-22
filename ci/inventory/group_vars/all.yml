@@ -15,6 +15,9 @@ iis_backup_path: "C:\\IIS\\Backups"
 iis_compression_path: "C:\\IIS\\Temp\\Compression"
 iis_temp_download_path: "C:\\Temp\\ansible_downloads"
 
+# CI always downloads directly from Microsoft CDN (no access to internal shares)
+iis_package_source: url
+
 # Install only .NET 8 LTS in CI to reduce pipeline runtime
 iis_dotnet_enabled_versions:
   - "8"

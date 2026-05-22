@@ -67,7 +67,17 @@ iis_https_port: 443
 iis_log_format: "W3C"
 iis_log_period: "Daily"
 
-# --- IIS Rewrite Module -----------------------------------------------------
+# --- Package source ---------------------------------------------------------
+# url:   Download directly from Microsoft CDN (default; requires internet access)
+# share: Copy from an internal UNC path (set iis_package_share in group_vars)
+iis_package_source: url
+
+# --- IIS URL Rewrite Module 2.1 ---------------------------------------------
+# The x64 installer URL is stable and frozen (last DLL update: September 2018).
+# Override only when using an internal mirror or pinning to a specific release.
+# See: https://www.iis.net/downloads/microsoft/url-rewrite
+iis_rewrite_module_url: "https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi"
+iis_rewrite_module_filename: "rewrite_amd64_en-US.msi"
 iis_install_rewrite_module: true
 
 # --- .NET versions ----------------------------------------------------------

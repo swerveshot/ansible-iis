@@ -5,8 +5,21 @@
 # Installs the Microsoft URL Rewrite Module 2.1 for IIS.
 # Enables IIS to rewrite URLs, create redirects, and define reverse proxy rules.
 #
+# Package source is controlled by iis_package_source (defaults/main.yml):
+#   url:   download from Microsoft CDN + Authenticode verification
+#   share: copy from UNC path (iis_package_share in group_vars)
+#
 # More info: https://www.iis.net/downloads/microsoft/url-rewrite
 # Tags: iis_rewrite
+
+# --- Validate share configuration ------------------------------------------
+- name: Verify share path is defined when iis_package_source is share
+  ansible.builtin.assert:
+    that: iis_package_share is defined and iis_package_share | length > 0
+    fail_msg: "'iis_package_share' must be set in group_vars when iis_package_source is 'share'"
+  when: iis_package_source == 'share'
+  tags:
+    - iis_rewrite
 
 # --- Check whether Rewrite Module is already installed ---------------------
 - name: Check whether IIS URL Rewrite Module is already installed
@@ -50,17 +63,52 @@
   tags:
     - iis_rewrite
 
-# --- Download Rewrite Module MSI -------------------------------------------
-- name: Download IIS URL Rewrite Module MSI to temporary directory
+# --- Obtain installer (url: download; share: copy) -------------------------
+- name: Download IIS URL Rewrite Module MSI from Microsoft CDN
   ansible.windows.win_get_url:
     url: "{{ iis_rewrite_module_url }}"
     dest: "{{ iis_temp_download_path }}\\{{ iis_rewrite_module_filename }}"
-    checksum: "{{ iis_rewrite_module_checksum }}"
-    checksum_algorithm: sha256
-    # Re-download only if file is missing or checksum does not match
     force: false
-  when: not rewrite_module_check.result.installed
-  register: rewrite_download
+  when:
+    - not rewrite_module_check.result.installed
+    - iis_package_source == 'url'
+  register: rewrite_download_url
+  tags:
+    - iis_rewrite
+
+- name: Copy IIS URL Rewrite Module MSI from network share
+  ansible.windows.win_copy:
+    src: "{{ iis_package_share }}\\{{ iis_rewrite_module_filename }}"
+    dest: "{{ iis_temp_download_path }}\\{{ iis_rewrite_module_filename }}"
+    remote_src: true
+  when:
+    - not rewrite_module_check.result.installed
+    - iis_package_source == 'share'
+  register: rewrite_download_share
+  tags:
+    - iis_rewrite
+
+# --- Authenticode signature verification (url source only) -----------------
+# More robust than a hardcoded hash: verifies the Microsoft code-signing chain.
+- name: Verify Authenticode signature of URL Rewrite installer
+  ansible.windows.win_powershell:
+    script: |
+      $path = "{{ iis_temp_download_path }}\{{ iis_rewrite_module_filename }}"
+      $sig = Get-AuthenticodeSignature -FilePath $path
+      if ($sig.Status -ne 'Valid') {
+        Write-Error "Authenticode verification failed: $($sig.Status)"
+        exit 1
+      }
+      if ($sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        Write-Error "Unexpected signer: $($sig.SignerCertificate.Subject)"
+        exit 1
+      }
+      $Ansible.Result = "Signature valid: $($sig.SignerCertificate.Subject)"
+      $Ansible.Changed = $false
+  when:
+    - not rewrite_module_check.result.installed
+    - iis_package_source == 'url'
+    - rewrite_download_url is success
   tags:
     - iis_rewrite
 
@@ -68,15 +116,15 @@
 - name: Install IIS URL Rewrite Module 2.1
   ansible.windows.win_package:
     path: "{{ iis_temp_download_path }}\\{{ iis_rewrite_module_filename }}"
-    # Silent MSI installation with logging
     arguments: >-
       /quiet
       /norestart
       /log "{{ iis_temp_download_path }}\\rewrite_install.log"
     state: present
-  when:
-    - not rewrite_module_check.result.installed
-    - rewrite_download is not failed
+  when: >-
+    not rewrite_module_check.result.installed and
+    ((iis_package_source == 'url' and rewrite_download_url is success) or
+     (iis_package_source == 'share' and rewrite_download_share is success))
   register: rewrite_install
   notify: "restart iis"
   tags:
