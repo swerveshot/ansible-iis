@@ -23,6 +23,7 @@
   register: dotnet_release_index
   delegate_to: localhost
   run_once: true
+  no_log: true
 
 - name: "[.NET {{ dotnet_pkg.major }}] Fetch per-channel release metadata"
   ansible.builtin.uri:
@@ -34,6 +35,7 @@
   register: dotnet_releases
   delegate_to: localhost
   run_once: true
+  no_log: true
 
 - name: "[.NET {{ dotnet_pkg.major }}] Set latest release entry fact"
   ansible.builtin.set_fact:
