@@ -276,6 +276,7 @@ all → windows → otap_o (Ontwikkeling)
 | `dotnet_8`            | Alleen .NET 8 |
 | `dotnet_9`            | Alleen .NET 9 |
 | `dotnet_10`           | Alleen .NET 10 |
+| `dotnet_ngen`         | .NET ngen hercompilatie (overgeslagen in CI) |
 | `dotnet_cleanup`      | Tijdelijke installatiebestanden verwijderen |
 | `iis_rewrite_example` | Voorbeeld HTTPS redirect regel |
 

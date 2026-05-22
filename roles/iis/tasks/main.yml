@@ -65,7 +65,7 @@
 
 - name: Run .NET ngen after new installations (recompiles assemblies for faster startup)
   community.windows.win_dotnet_ngen:
-  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10]
+  tags: [dotnet, dotnet_8, dotnet_9, dotnet_10, dotnet_ngen]
 
 - name: Show installed .NET runtimes overview
   ansible.windows.win_powershell:

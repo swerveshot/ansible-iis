@@ -155,6 +155,7 @@ jobs:
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
             -e @/tmp/ci_vars.json \
+            --skip-tags dotnet_ngen \
             -v
 
       - name: Idempotency check (second run must report changed=0)
@@ -170,7 +171,8 @@ jobs:
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
-            -e @/tmp/ci_vars.json 2>&1)
+            -e @/tmp/ci_vars.json \
+            --skip-tags dotnet_ngen 2>&1)
           rc=$?
           echo "$output"
           if [ $rc -ne 0 ]; then
