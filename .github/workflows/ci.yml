@@ -34,9 +34,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -44,8 +44,21 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Cache Ansible collections
+        uses: actions/cache@v4
+        id: collections-cache-lint
+        with:
+          path: collections
+          key: collections-${{ hashFiles('requirements.yml') }}
+
       - name: Install Ansible collections
-        run: ansible-galaxy collection install -r requirements.yml
+        if: steps.collections-cache-lint.outputs.cache-hit != 'true'
+        run: |
+          for i in 1 2 3; do
+            ansible-galaxy collection install -r requirements.yml && break
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
 
       - name: Run ansible-lint
         run: ansible-lint --nocolor --profile min
@@ -57,9 +70,9 @@ jobs:
     name: Syntax check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -67,8 +80,21 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Cache Ansible collections
+        uses: actions/cache@v4
+        id: collections-cache-syntax
+        with:
+          path: collections
+          key: collections-${{ hashFiles('requirements.yml') }}
+
       - name: Install Ansible collections
-        run: ansible-galaxy collection install -r requirements.yml
+        if: steps.collections-cache-syntax.outputs.cache-hit != 'true'
+        run: |
+          for i in 1 2 3; do
+            ansible-galaxy collection install -r requirements.yml && break
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
 
       - name: Ansible syntax check
         run: ansible-playbook playbooks/site.yml --syntax-check -i ci/inventory/hosts.yml
@@ -83,7 +109,7 @@ jobs:
     needs: [lint, syntax]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Configure WinRM for HTTP basic auth (safe: ephemeral runner only)
       - name: Configure WinRM and create CI test user
@@ -115,7 +141,7 @@ jobs:
           Write-Host "WinRM configured on port 5985 (HTTP), CI user created"
 
       # Install Ubuntu in WSL and register the wsl-bash shell for later steps
-      - uses: Vampire/setup-wsl@v2
+      - uses: Vampire/setup-wsl@v7
         with:
           distribution: Ubuntu-22.04
           update: "true"
@@ -131,11 +157,23 @@ jobs:
           # to ~/.ansible.cfg (Linux filesystem) which Ansible always checks.
           cp ansible.cfg ~/.ansible.cfg
 
+      - name: Cache Ansible collections
+        uses: actions/cache@v4
+        id: collections-cache-integration
+        with:
+          path: collections
+          key: collections-${{ hashFiles('requirements.yml') }}
+
       - name: Install Ansible collections in WSL
+        if: steps.collections-cache-integration.outputs.cache-hit != 'true'
         shell: wsl-bash {0}
         run: |
-          /tmp/ansible-venv/bin/ansible-galaxy collection install \
-            -r requirements.yml --collections-path collections
+          for i in 1 2 3; do
+            /tmp/ansible-venv/bin/ansible-galaxy collection install \
+              -r requirements.yml --collections-path collections && break
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
 
       - name: Run Ansible playbook from WSL
         shell: wsl-bash {0}
