@@ -25,6 +25,64 @@ beheren via Claude Code.
 - `ansible.windows` voor algemene Windows taken
 - `community.windows` voor firewall en win_dotnet_ngen
 
+### Installatiebron: `iis_package_source`
+
+De rol ondersteunt twee bronstrategieën voor het ophalen van installatiebestanden.
+De keuze wordt bepaald door de variabele `iis_package_source` in `defaults/main.yml`:
+
+```yaml
+iis_package_source: url    # Default: direct downloaden via Microsoft CDN
+iis_package_source: share  # Kopiëren vanaf een interne netwerkshare
+```
+
+**Waarom twee strategieën?**
+
+| Situatie | Strategie | Reden |
+|---|---|---|
+| GitHub Actions CI | `url` | Runner heeft geen toegang tot interne shares |
+| Productie / OTAP | `share` | Servers zonder internettoegang; beheersbaar distributieproces |
+
+**Taakvolgorde — identiek na de bronkeuze:**
+
+```
+[url]   → win_get_url (Microsoft CDN) → temp → verificatie → installeren → opruimen
+[share] → win_copy (UNC-pad)          → temp →              installeren → opruimen
+```
+
+De installatie- en opruimtaken zijn **identiek** voor beide strategieën. Alleen
+de kopieer-stap verschilt. Implementeer dit met `when: iis_package_source == 'url'`
+en `when: iis_package_source == 'share'` op de respectievelijke kopieer-taken,
+**niet** door aparte taakbestanden per strategie.
+
+**Verificatie per strategie:**
+- `url`: checksum-verificatie via `win_get_url` (SHA512 voor .NET, Authenticode voor URL Rewrite)
+- `share`: geen extra verificatie — de organisatie is verantwoordelijk voor de integriteit
+  van bestanden op de interne share
+
+**Share-configuratie hoort in `group_vars`, nooit in de rol:**
+```yaml
+# inventory/group_vars/windows/main.yml
+iis_package_share: '\\fileserver\software\iis'
+```
+
+De variabele `iis_package_share` heeft geen default in `defaults/main.yml` en
+wordt alleen gebruikt wanneer `iis_package_source: share`. Claude Code moet een
+duidelijke foutmelding genereren als `iis_package_source: share` is ingesteld
+maar `iis_package_share` niet gedefinieerd is:
+
+```yaml
+- name: Verify share path is defined when source is share
+  ansible.builtin.assert:
+    that: iis_package_share is defined and iis_package_share | length > 0
+    fail_msg: "'iis_package_share' must be set in group_vars when iis_package_source is 'share'"
+  when: iis_package_source == 'share'
+```
+
+**CI-override in `ci/inventory/`:**
+```yaml
+iis_package_source: url  # Expliciete override — CI gebruikt altijd directe download
+```
+
 ### .NET installatiestrategie
 - Hosting Bundle per versie (installeert x64 én x86 runtime + ASP.NET + IIS module)
 - Losse x86 runtime optioneel naast de bundle (`iis_dotnet_install_individual_x86`)
@@ -68,9 +126,10 @@ Elk sub-object heeft een `files`-array met:
 
 | Component | Bestandsnaam | Sub-object in releases.json |
 |---|---|---|
-| Hosting Bundle | `dotnet-hosting-win.exe` | `runtime.files` |
+| Hosting Bundle | `dotnet-hosting-win.exe` | `aspnetcore-runtime.files` |
 | ASP.NET Core Runtime | `aspnetcore-runtime-win-x64.exe` | `aspnetcore-runtime.files` |
-| .NET Runtime | `dotnet-runtime-win-x64.exe` | `runtime.files` |
+| .NET Runtime x64 | `dotnet-runtime-win-x64.exe` | `runtime.files` |
+| .NET Runtime x86 | `dotnet-runtime-win-x86.exe` | `runtime.files` |
 
 De Hosting Bundle is een superset: hij installeert de .NET Runtime, ASP.NET Core
 Runtime én de IIS-integratiemodule (ANCM). Losse componenten zijn doorgaans
@@ -104,17 +163,13 @@ niet nodig.
 - name: Set hosting bundle download facts
   ansible.builtin.set_fact:
     dotnet_hosting_url: >-
-      {{ (dotnet_releases.json.releases |
-          selectattr('release-version', 'equalto', dotnet_releases.json['latest-release']) |
-          first).runtime.files |
+      {{ (_dotnet_latest_release['aspnetcore-runtime'].files |
           selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
-          first | community.general.json_query('url') }}
+          first).url }}
     dotnet_hosting_checksum: >-
-      sha512:{{ (dotnet_releases.json.releases |
-          selectattr('release-version', 'equalto', dotnet_releases.json['latest-release']) |
-          first).runtime.files |
+      {{ (_dotnet_latest_release['aspnetcore-runtime'].files |
           selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
-          first | community.general.json_query('hash') }}
+          first).hash }}
 ```
 
 `delegate_to: localhost` met `run_once: true` houdt de HTTP-aanroepen op de
@@ -129,6 +184,47 @@ dotnet_channel_version: "8.0"  # Of "9.0", "10.0", etc.
 Wil een gebruiker de rol forken en een vaste patch-versie gebruiken, dan kan
 `url` en `hash` per versie worden overschreven in `defaults/main.yml`. Dit is
 bewust de uitzondering, niet de norm.
+
+### URL Rewrite Module: geen JSON API, wel Authenticode-verificatie
+
+De IIS URL Rewrite Module 2.1 heeft — anders dan .NET — **geen** machine-leesbare
+metadata-API en Microsoft publiceert geen officiële checksums voor de installer.
+De download-URL is al jaren stabiel en ongewijzigd (bevroren product, laatste
+DLL-update september 2018):
+
+```
+# x64 (gebruik deze)
+https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi
+
+# x86 (alleen indien expliciet vereist)
+https://download.microsoft.com/download/D/8/1/D81E5DD6-1ABB-46B0-9B4B-21894E18B77F/rewrite_x86_en-US.msi
+```
+
+Deze URL's mogen wél worden hardgecodeerd in `defaults/main.yml` — er is geen
+alternatief en ze wijzigen niet.
+
+**Verificatie bij `iis_package_source: url`:**
+Gebruik Authenticode-handtekeningverificatie via PowerShell na het downloaden.
+Dit is robuuster dan een handmatig bijgehouden hash:
+
+```yaml
+- name: Verify Authenticode signature of URL Rewrite installer
+  ansible.windows.win_powershell:
+    script: |
+      $sig = Get-AuthenticodeSignature -FilePath "{{ iis_temp_path }}\rewrite_amd64_en-US.msi"
+      if ($sig.Status -ne 'Valid') {
+        Write-Error "Authenticode verification failed: $($sig.Status)"
+        exit 1
+      }
+      if ($sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        Write-Error "Unexpected signer: $($sig.SignerCertificate.Subject)"
+        exit 1
+      }
+  when: iis_package_source == 'url'
+```
+
+**Verificatie bij `iis_package_source: share`:** geen — de organisatie
+is verantwoordelijk voor de integriteit van bestanden op de interne share.
 
 ### DRY-principe
 - `_dotnet_version_install.yml` is een generiek helper-taakbestand (underscore = niet
@@ -239,6 +335,29 @@ run moet `changed=0` rapporteren).
 | `iis_data_drive` | `C:` | Windows runners hebben geen D:-schijf |
 | Alle `iis_*_path` | `C:\IIS\...` | Volgt uit bovenstaande |
 | `iis_dotnet_enabled_versions` | `["8"]` | Kortere pipeline runtime |
+| `iis_package_source` | `url` | CI heeft geen toegang tot interne shares |
+
+### GitHub Actions loganalyse
+
+Bij het onderzoeken van CI-fouten altijd het **volledige log** ophalen, niet alleen
+de staart. GitHub Actions comprimeert lange regels en `--log-failed` toont soms
+alleen de taakheader zonder resultaat als de stap meteen na die taak afbreekt.
+
+```bash
+# Volledig log — gebruik dit als startpunt
+gh run view <run-id> --repo <owner>/<repo> --log 2>&1 | grep -E "TASK|fatal|FAILED|changed|ERROR" | head -100
+
+# Alleen gefaalde stap-output (handig bij grote runs)
+gh run view <run-id> --repo <owner>/<repo> --log-failed 2>&1 | tail -100
+
+# Context rondom een specifieke taak
+gh run view <run-id> --repo <owner>/<repo> --log 2>&1 | grep -A 10 "naam van de taak"
+```
+
+Als een taakheader verschijnt maar er geen resultaat op volgt, en de stap daarna
+meteen begint met `Post Run`, dan is de Ansible-stap op dat punt afgebroken.
+Bekijk dan de volledige uitvoer van de stap (niet alleen de tail) om te zien of
+er een `fatal:` regel aan vooraf gaat.
 
 ### Lokaal testen
 ```bash

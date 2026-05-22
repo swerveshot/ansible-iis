@@ -46,11 +46,11 @@
 - name: "[.NET {{ dotnet_pkg.major }}] Set Hosting Bundle download facts"
   ansible.builtin.set_fact:
     dotnet_hosting_url: >-
-      {{ (_dotnet_latest_release.runtime.files |
+      {{ (_dotnet_latest_release['aspnetcore-runtime'].files |
           selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
           first).url }}
     dotnet_hosting_checksum: >-
-      {{ (_dotnet_latest_release.runtime.files |
+      {{ (_dotnet_latest_release['aspnetcore-runtime'].files |
           selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
           first).hash }}
 
