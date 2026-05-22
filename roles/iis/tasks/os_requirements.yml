@@ -14,15 +14,15 @@
     - timezone
 
 # --- Create temporary download directory ------------------------------------
-- name: Create temporary download directory on C-drive
+- name: Create temporary download directory
   ansible.windows.win_file:
     path: "{{ iis_temp_download_path }}"
     state: directory
   tags:
     - os_requirements
 
-# --- Create D-drive directory structure -------------------------------------
-- name: Create IIS directory structure on D-drive
+# --- Create IIS directory structure -----------------------------------------
+- name: Create IIS directory structure
   ansible.windows.win_file:
     path: "{{ item }}"
     state: directory
@@ -57,7 +57,7 @@
 
 # --- Configure Windows Pagefile ---------------------------------------------
 # Ensure the pagefile is on C:\ and not on D:\ (D:\ is for application data)
-- name: Check whether pagefile is on C-drive
+- name: Check pagefile location
   ansible.windows.win_powershell:
     script: |
       $pagefile = Get-WmiObject Win32_PageFileSetting | Where-Object { $_.Name -notlike "C:\*" }

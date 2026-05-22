@@ -22,34 +22,42 @@
     - iis_rewrite
 
 # --- Check whether Rewrite Module is already installed ---------------------
+# Win32_Product deliberately avoided: it triggers MSI consistency checks on
+# every installed product and can take several minutes. Use IIS module check
+# (sub-second) with a registry fallback (also sub-second) instead.
 - name: Check whether IIS URL Rewrite Module is already installed
   ansible.windows.win_powershell:
     script: |
-      # Check whether the module MSI is already installed via registry
-      $installed = Get-WmiObject -Class Win32_Product -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "*URL Rewrite*" }
+      $installed = $false
+      $method = $null
 
-      # Alternative, faster method: check IIS modules
-      $iisModuleCheck = $false
+      # Primary: IIS global module check (fastest when WebAdministration is available)
       try {
         Import-Module WebAdministration -ErrorAction Stop
-        $iisModule = Get-WebGlobalModule -Name "RewriteModule" -ErrorAction SilentlyContinue
-        if ($iisModule) {
-          $iisModuleCheck = $true
+        if (Get-WebGlobalModule -Name "RewriteModule" -ErrorAction SilentlyContinue) {
+          $installed = $true
+          $method = "IIS module"
         }
       } catch {}
 
-      if ($installed -or $iisModuleCheck) {
-        $Ansible.Result = @{
-          installed = $true
-          method    = if ($iisModuleCheck) { "IIS module" } else { "MSI" }
-        }
-      } else {
-        $Ansible.Result = @{
-          installed = $false
-          method    = $null
+      # Fallback: registry check (fast, works before IIS is fully configured)
+      if (-not $installed) {
+        $regRoots = @(
+          "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+          "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        )
+        foreach ($root in $regRoots) {
+          if (Get-ChildItem $root -ErrorAction SilentlyContinue |
+              Get-ItemProperty -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -like "*URL Rewrite*" }) {
+            $installed = $true
+            $method = "registry"
+            break
+          }
         }
       }
+
+      $Ansible.Result  = @{ installed = $installed; method = $method }
       $Ansible.Changed = $false
   register: rewrite_module_check
   tags:

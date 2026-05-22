@@ -2,14 +2,14 @@
 # =============================================================================
 # roles/iis/tasks/iis_configure.yml - IIS configuration
 # =============================================================================
-# Configures IIS: log/temp paths to D-drive, app pools, default site,
+# Configures IIS: log/temp paths, app pools, default site,
 # basic security hardening. Uses microsoft.iis collection.
 # Tags: iis_configure
 
 # --- IIS global log and compression settings --------------------------------
 # Three related settings in one PowerShell call for efficiency
 # and atomic change (all succeed or nothing changes).
-- name: Configure IIS global log and compression settings to D-drive
+- name: Configure IIS log and compression paths
   ansible.windows.win_powershell:
     script: |
       Import-Module WebAdministration -ErrorAction Stop
@@ -65,7 +65,7 @@
     - app_pools
 
 # --- Default Web Site configuration -----------------------------------------
-- name: Configure Default Web Site (path to D-drive, app pool)
+- name: Configure Default Web Site path and application pool
   microsoft.iis.website:
     name: "{{ iis_default_site_name }}"
     state: started

@@ -141,7 +141,7 @@ jobs:
         shell: wsl-bash {0}
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD
+          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
         run: |
           # WSL 2: use default gateway. WSL 1: no default route, use 127.0.0.1.
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
@@ -161,7 +161,7 @@ jobs:
         shell: wsl-bash {0}
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD
+          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
         run: |
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
