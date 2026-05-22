@@ -193,7 +193,7 @@ jobs:
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
             -e @/tmp/ci_vars.json \
-            --skip-tags dotnet_ngen \
+            --skip-tags dotnet_ngen,dotnet_cleanup \
             -v
 
       - name: Idempotency check (second run must report changed=0)

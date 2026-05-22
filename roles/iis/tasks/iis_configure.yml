@@ -15,6 +15,14 @@
       Import-Module WebAdministration -ErrorAction Stop
       $changed = $false
 
+      # IIS stores enum properties as plain integers, not typed enums.
+      # Values from IIS_schema.xml: logFormat IIS=0,NCSA=1,W3C=2,Custom=3;
+      # period MaxSize=0,Daily=1,Weekly=2,Monthly=3,Hourly=4.
+      $enumMaps = @{
+        logFormat = @{ IIS=0; NCSA=1; W3C=2; Custom=3 }
+        period    = @{ MaxSize=0; Daily=1; Weekly=2; Monthly=3; Hourly=4 }
+      }
+
       $settings = @(
         @{
           filter = "system.applicationHost/sites/siteDefaults/logFile"
@@ -34,10 +42,15 @@
         foreach ($prop in $setting.props.GetEnumerator()) {
           $raw = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
             -filter $setting.filter -name $prop.Key).Value
-          # Enum properties (logFormat, period) are returned as integers; cast to
-          # string so "0" does not spuriously differ from "W3C" on every run.
-          $current = if ($raw -is [System.Enum]) { $raw.ToString() } else { [string]$raw }
-          if ($current -ine $prop.Value) {
+
+          $needsChange = if ($enumMaps.ContainsKey($prop.Key)) {
+            [int]$raw -ne $enumMaps[$prop.Key][$prop.Value]
+          } else {
+            $current = if ($raw -is [System.Enum]) { $raw.ToString() } else { [string]$raw }
+            $current -ine $prop.Value
+          }
+
+          if ($needsChange) {
             Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
               -filter $setting.filter -name $prop.Key -value $prop.Value
             $changed = $true
