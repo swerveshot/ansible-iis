@@ -50,10 +50,11 @@
             exit 1
           }
           $freeSpaceGB = [math]::Round($drive.Free / 1GB, 2)
-          $Ansible.Result = @{
+          $Ansible.Result  = @{
             free_gb   = $freeSpaceGB
             available = $true
           }
+          $Ansible.Changed = $false
       register: drive_check
       tags: always
 

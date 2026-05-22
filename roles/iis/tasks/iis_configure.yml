@@ -32,9 +32,12 @@
 
       foreach ($setting in $settings) {
         foreach ($prop in $setting.props.GetEnumerator()) {
-          $current = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+          $raw = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
             -filter $setting.filter -name $prop.Key).Value
-          if ($current -ne $prop.Value) {
+          # Enum properties (logFormat, period) are returned as integers; cast to
+          # string so "0" does not spuriously differ from "W3C" on every run.
+          $current = if ($raw -is [System.Enum]) { $raw.ToString() } else { [string]$raw }
+          if ($current -ine $prop.Value) {
             Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
               -filter $setting.filter -name $prop.Key -value $prop.Value
             $changed = $true
@@ -71,11 +74,6 @@
     state: started
     physical_path: "{{ iis_wwwroot_path }}\\default"
     application_pool: "{{ iis_default_app_pool }}"
-    bindings:
-      set:
-        - ip: "*"
-          port: "{{ iis_http_port }}"
-          protocol: http
   notify: "restart iis"
   tags:
     - iis_configure

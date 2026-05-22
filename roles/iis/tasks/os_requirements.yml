@@ -62,13 +62,13 @@
     script: |
       $pagefile = Get-WmiObject Win32_PageFileSetting | Where-Object { $_.Name -notlike "C:\*" }
       if ($pagefile) {
-        $Ansible.Changed = $true
         $Ansible.Result = "Pagefile found on: $($pagefile.Name)"
       } else {
-        $Ansible.Changed = $false
         $Ansible.Result = "Pagefile correctly configured on C:\"
       }
+      $Ansible.Changed = $false
   register: pagefile_check
+  changed_when: false
   tags:
     - os_requirements
     - pagefile
@@ -85,15 +85,17 @@
 - name: Set power plan to High Performance
   ansible.windows.win_powershell:
     script: |
-      $highPerf = Get-WmiObject -Namespace root\cimv2\power -Class Win32_PowerPlan |
-        Where-Object { $_.ElementName -eq "High performance" }
-      if ($highPerf) {
+      $plans = Get-WmiObject -Namespace root\cimv2\power -Class Win32_PowerPlan
+      $highPerf = $plans | Where-Object { $_.ElementName -eq "High performance" }
+      $active   = $plans | Where-Object { $_.IsActive -eq $true }
+
+      if ($highPerf -and $active.ElementName -ne "High performance") {
         $highPerf.Activate()
         $Ansible.Changed = $true
         $Ansible.Result = "High Performance power plan activated"
       } else {
         $Ansible.Changed = $false
-        $Ansible.Result = "High Performance power plan not found (may already be active)"
+        $Ansible.Result = if ($highPerf) { "High Performance already active" } else { "High Performance plan not found" }
       }
   register: power_plan_result
   tags:
