@@ -167,19 +167,19 @@ jobs:
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
           python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
-          output=$(ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
+          tmplog=$(mktemp)
+          ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
             -e @/tmp/ci_vars.json \
-            --skip-tags dotnet_ngen 2>&1)
-          rc=$?
-          echo "$output"
+            --skip-tags dotnet_ngen 2>&1 | tee "$tmplog"
+          rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             echo "Playbook failed on second run"
             exit 1
           fi
-          total_changed=$(echo "$output" | grep -oP 'changed=\K[0-9]+' | awk '{s+=$1} END {print s+0}')
+          total_changed=$(grep -oP 'changed=\K[0-9]+' "$tmplog" | awk '{s+=$1} END {print s+0}')
           if [ "$total_changed" -gt 0 ]; then
             echo "Idempotency check FAILED: $total_changed task(s) changed on second run"
             exit 1
