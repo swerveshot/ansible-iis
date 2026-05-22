@@ -79,30 +79,25 @@ iis_dotnet_enabled_versions:
   - "9"
   - "10"
 
-# Download definition per .NET version.
-# Update on new patch releases: https://dotnet.microsoft.com/download/dotnet
-# The Hosting Bundle installs: Runtime x64+x86, ASP.NET x64+x86, IIS module.
+# Version metadata per .NET channel.
+# URL and checksum are fetched at runtime from the Microsoft .NET Releases API
+# (https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json)
+# so no manual updates are needed on new patch releases.
 iis_dotnet_versions:
   - major: "8"
-    patch: "8.0.15"
+    dotnet_channel_version: "8.0"
     support_type: "LTS"
     eol_date: "2026-11-10"
-    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/b6e145e8-8f5e-4b38-9d35-e2e60a892d0d/e8abfc5e07ac98f8fe54a4d00e3bab42/dotnet-hosting-8.0.15-win.exe" # noqa: yaml[line-length]
-    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-8.0.15-win-x86.exe"
 
   - major: "9"
-    patch: "9.0.6"
+    dotnet_channel_version: "9.0"
     support_type: "STS"
     eol_date: "2026-11-10"
-    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-hosting-9.0.6-win.exe"
-    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-9.0.6-win-x86.exe"
 
   - major: "10"
-    patch: "10.0.6"
+    dotnet_channel_version: "10.0"
     support_type: "LTS"
     eol_date: "2028-11-14"
-    hosting_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-hosting-10.0.6-win.exe"
-    runtime_x86_url: "https://download.visualstudio.microsoft.com/download/pr/HASH/dotnet-runtime-10.0.6-win-x86.exe"
 
 # Install x86 runtime separately alongside the Hosting Bundle (for explicit 32-bit verification)
 iis_dotnet_install_individual_x86: true

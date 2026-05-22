@@ -6,12 +6,65 @@
 # Called via include_tasks from tasks/main.yml.
 #
 # Expects variable `dotnet_pkg` (dict) with fields:
-#   major           (str)  E.g. "8"
-#   patch           (str)  E.g. "8.0.15"
-#   support_type    (str)  "LTS" or "STS"
-#   eol_date        (str)  E.g. "2026-11-10"
-#   hosting_url     (str)  Full HTTPS download URL
-#   runtime_x86_url (str)  x86 runtime URL
+#   major                  (str)  E.g. "8"
+#   dotnet_channel_version (str)  E.g. "8.0"
+#   support_type           (str)  "LTS" or "STS"
+#   eol_date               (str)  E.g. "2026-11-10"
+#
+# URL and SHA512 checksum are resolved at runtime from the Microsoft
+# .NET Releases API; no manual updates are needed on new patch releases.
+
+# --- Fetch download metadata from Microsoft .NET Releases API ---------------
+
+- name: "[.NET {{ dotnet_pkg.major }}] Fetch .NET release index"
+  ansible.builtin.uri:
+    url: "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json"
+    return_content: true
+  register: dotnet_release_index
+  delegate_to: localhost
+  run_once: true
+
+- name: "[.NET {{ dotnet_pkg.major }}] Fetch per-channel release metadata"
+  ansible.builtin.uri:
+    url: >-
+      {{ (dotnet_release_index.json['releases-index'] |
+          selectattr('channel-version', 'equalto', dotnet_pkg.dotnet_channel_version) |
+          first)['releases.json'] }}
+    return_content: true
+  register: dotnet_releases
+  delegate_to: localhost
+  run_once: true
+
+- name: "[.NET {{ dotnet_pkg.major }}] Set latest release entry fact"
+  ansible.builtin.set_fact:
+    dotnet_latest_version: "{{ dotnet_releases.json['latest-release'] }}"
+    _dotnet_latest_release: >-
+      {{ dotnet_releases.json.releases |
+         selectattr('release-version', 'equalto', dotnet_releases.json['latest-release']) |
+         first }}
+
+- name: "[.NET {{ dotnet_pkg.major }}] Set Hosting Bundle download facts"
+  ansible.builtin.set_fact:
+    dotnet_hosting_url: >-
+      {{ (_dotnet_latest_release.runtime.files |
+          selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
+          first).url }}
+    dotnet_hosting_checksum: >-
+      {{ (_dotnet_latest_release.runtime.files |
+          selectattr('name', 'equalto', 'dotnet-hosting-win.exe') |
+          first).hash }}
+
+- name: "[.NET {{ dotnet_pkg.major }}] Set x86 runtime download facts"
+  ansible.builtin.set_fact:
+    dotnet_runtime_x86_url: >-
+      {{ (_dotnet_latest_release.runtime.files |
+          selectattr('name', 'equalto', 'dotnet-runtime-win-x86.exe') |
+          first).url }}
+    dotnet_runtime_x86_checksum: >-
+      {{ (_dotnet_latest_release.runtime.files |
+          selectattr('name', 'equalto', 'dotnet-runtime-win-x86.exe') |
+          first).hash }}
+  when: iis_dotnet_install_individual_x86 | bool
 
 # --- Detect whether this version is already installed ----------------------
 - name: "[.NET {{ dotnet_pkg.major }}] Detect installation"
@@ -52,23 +105,25 @@
       .NET {{ dotnet_pkg.major }}:
       {{ 'v' + dotnet_pkg_check.result.version + ' already installed'
          if dotnet_pkg_check.result.installed
-         else 'not present, will be installed' }}
+         else 'not present — v' + dotnet_latest_version + ' will be installed' }}
 
 # --- Download Hosting Bundle ------------------------------------------------
 # The Hosting Bundle includes: Runtime x64, Runtime x86, ASP.NET x64,
 # ASP.NET x86, and the IIS AspNetCoreModuleV2 — all in one installer.
 - name: "[.NET {{ dotnet_pkg.major }}] Download Hosting Bundle"
   ansible.windows.win_get_url:
-    url: "{{ dotnet_pkg.hosting_url }}"
-    dest: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_pkg.patch }}-win.exe"
-    force: false   # Re-download only if file is missing
+    url: "{{ dotnet_hosting_url }}"
+    dest: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_latest_version }}-win.exe"
+    checksum: "{{ dotnet_hosting_checksum }}"
+    checksum_algorithm: sha512
+    force: false
   when: not dotnet_pkg_check.result.installed
   register: dotnet_pkg_download
 
 # --- Install Hosting Bundle -------------------------------------------------
 - name: "[.NET {{ dotnet_pkg.major }}] Install Hosting Bundle"
   ansible.windows.win_package:
-    path: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_pkg.patch }}-win.exe"
+    path: "{{ iis_temp_download_path }}\\dotnet-hosting-{{ dotnet_latest_version }}-win.exe"
     arguments: >-
       /quiet
       /norestart
@@ -85,14 +140,31 @@
     - "restart iis"
     - "restart app pools"
 
+# --- On install failure, read log -------------------------------------------
+- name: "[.NET {{ dotnet_pkg.major }}] Read install log on failure"
+  ansible.windows.win_powershell:
+    script: |
+      $logPath = "{{ iis_temp_download_path }}\\dotnet{{ dotnet_pkg.major }}_install.log"
+      if (Test-Path $logPath) { Get-Content $logPath | Select-Object -Last 50 }
+      else { "Log file not found: $logPath" }
+  when: dotnet_pkg_install is defined and dotnet_pkg_install is failed
+  register: dotnet_pkg_log
+
+- name: "[.NET {{ dotnet_pkg.major }}] Show install log"
+  ansible.builtin.debug:
+    msg: "{{ dotnet_pkg_log.result }}"
+  when: dotnet_pkg_install is defined and dotnet_pkg_install is failed
+
 # --- Optional standalone x86 Runtime ----------------------------------------
 # The Hosting Bundle already installs x86, but this explicitly validates
 # the x86 installation. Useful for 32-bit applications without a Hosting Bundle.
 # Disable via iis_dotnet_install_individual_x86: false.
 - name: "[.NET {{ dotnet_pkg.major }}] Download x86 Runtime"
   ansible.windows.win_get_url:
-    url: "{{ dotnet_pkg.runtime_x86_url }}"
-    dest: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_pkg.patch }}-win-x86.exe"
+    url: "{{ dotnet_runtime_x86_url }}"
+    dest: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_latest_version }}-win-x86.exe"
+    checksum: "{{ dotnet_runtime_x86_checksum }}"
+    checksum_algorithm: sha512
     force: false
   when:
     - iis_dotnet_install_individual_x86 | bool
@@ -101,7 +173,7 @@
 
 - name: "[.NET {{ dotnet_pkg.major }}] Install x86 Runtime"
   ansible.windows.win_package:
-    path: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_pkg.patch }}-win-x86.exe"
+    path: "{{ iis_temp_download_path }}\\dotnet-runtime-{{ dotnet_latest_version }}-win-x86.exe"
     arguments: /quiet /norestart
     state: present
   when:
