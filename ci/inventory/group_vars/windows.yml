@@ -10,6 +10,8 @@ ansible_psrp_auth: basic
 ansible_psrp_protocol: http
 ansible_port: 5985
 ansible_psrp_cert_validation: ignore
+# basic auth over HTTP cannot encrypt messages; encryption must be disabled explicitly
+ansible_psrp_message_encryption: never
 ansible_pipelining: true
 ansible_psrp_connection_timeout: 120
 ansible_psrp_read_timeout: 130
