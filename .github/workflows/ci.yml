@@ -230,22 +230,28 @@ jobs:
       - name: Verify IIS responds on port 80
         shell: powershell
         run: |
-          # Use curl.exe (ships with Windows Server 2022) instead of
-          # Invoke-WebRequest to avoid HTTP keep-alive connection reuse issues
-          # that cause spurious "Unable to connect" errors on subsequent retries.
-          # Accept any HTTP status (200, 403, 404) as proof IIS is serving.
+          # Retry loop: IIS may need a moment to finish initialising.
+          # Accept any HTTP response (200, 403, 404 ...) as proof IIS is serving —
+          # only a missing response (timeout / connection refused) counts as failure.
           $maxAttempts = 12
           $attempt = 0
           $success = $false
           while ($attempt -lt $maxAttempts -and -not $success) {
             $attempt++
-            $httpCode = & curl.exe -s -o $null -w "%{http_code}" --max-time 10 http://127.0.0.1/
-            if ($httpCode -match '^\d{3}$' -and [int]$httpCode -gt 0) {
-              Write-Host "IIS responded with HTTP $httpCode (attempt $attempt)"
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 15
+              Write-Host "IIS responded with HTTP $($response.StatusCode) (attempt $attempt)"
               $success = $true
-            } else {
-              Write-Host "Attempt $attempt/$maxAttempts: no HTTP response (curl output: $httpCode)"
-              if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 5 }
+            } catch [System.Net.WebException] {
+              if ($_.Exception.Response -ne $null) {
+                # Got an HTTP error response (e.g. 403, 404) — IIS is serving
+                $code = [int]$_.Exception.Response.StatusCode
+                Write-Host "IIS responded with HTTP $code (attempt $attempt)"
+                $success = $true
+              } else {
+                Write-Host "Attempt $attempt of $maxAttempts failed: $($_.Exception.Message)"
+                if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 5 }
+              }
             }
           }
           if (-not $success) {
