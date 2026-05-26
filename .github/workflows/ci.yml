@@ -250,6 +250,17 @@ jobs:
               $success = $true
             } catch {
               Write-Host "Attempt $attempt/$maxAttempts failed: $_"
+              # Diagnose site/pool state after each failure
+              $site = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+              Write-Host "  Site state: $($site.State)"
+              try {
+                $poolState = (Get-WebAppPoolState -Name "DefaultAppPool").Value
+                Write-Host "  App pool state: $poolState"
+              } catch {
+                Write-Host "  App pool state: (error reading)"
+              }
+              Write-Host "  netstat :80:"
+              netstat -ano | findstr ":80 "
               if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 5 }
             }
           }
