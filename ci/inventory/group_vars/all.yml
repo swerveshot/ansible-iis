@@ -28,3 +28,8 @@ otap_environment: "ci"
 # Variables required by the role that have no defaults and are normally set
 # in inventory/group_vars/all/main.yml (not loaded when using ci/inventory/)
 server_timezone: "W. Europe Standard Time"
+
+# IANA timezone for the Ansible control node (Linux/WSL).
+# Used by profile_tasks and timer callbacks so timestamps match local time.
+# Must correspond to server_timezone above.
+iana_timezone: "Europe/Amsterdam"

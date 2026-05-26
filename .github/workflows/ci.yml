@@ -150,18 +150,23 @@ jobs:
           update: "true"
           additional-packages: python3-pip python3-venv
 
-      # Write /etc/wsl.conf with DrvFs metadata before the first wsl-bash step.
-      # After wsl --shutdown the next wsl-bash invocation restarts WSL and
-      # automounts D: with metadata so files are not world-writable (0644
-      # instead of 0777). This allows Ansible to read ansible.cfg from the
-      # workspace directly without copying it to the Linux filesystem.
-      - name: Configure DrvFs metadata and restart WSL
+      # Configure WSL before the first wsl-bash step, then restart WSL so
+      # settings take effect:
+      # - DrvFs metadata: files on NTFS mounts get proper permissions (0644
+      #   instead of 0777), allowing Ansible to read ansible.cfg directly.
+      # - Timezone: set /etc/localtime so profile_tasks/timer callbacks show
+      #   local time instead of UTC.
+      - name: Configure WSL (DrvFs metadata, timezone) and restart
         shell: powershell
         run: |
           # Write wsl.conf via bash printf to avoid Windows CRLF line endings.
           # PowerShell here-strings produce \r\n which WSL's wsl.conf parser
           # rejects as invalid key names.
           wsl --exec sh -c "printf '[automount]\nenabled = true\noptions = ""metadata,uid=1000,gid=1000,fmask=022,dmask=022""\n' > /etc/wsl.conf"
+          # Set WSL timezone from iana_timezone in ci/inventory/group_vars/all.yml
+          # so profile_tasks and timer callback timestamps match local time.
+          $tz = python3 -c "import yaml; print(yaml.safe_load(open('ci/inventory/group_vars/all.yml'))['iana_timezone'])"
+          wsl --exec sh -c "ln -sf /usr/share/zoneinfo/$tz /etc/localtime"
           wsl --shutdown
 
       - name: Install Ansible in WSL
