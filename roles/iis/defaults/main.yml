@@ -46,19 +46,6 @@ iis_features:
   - NET-Framework-45-Core
   - NET-Framework-45-ASPNET
 
-# --- IIS Application Pools --------------------------------------------------
-iis_app_pools:
-  - name: "DefaultAppPool"
-    managed_runtime_version: ""   # Empty = No Managed Code (.NET Core / .NET 5+)
-    managed_pipeline_mode: "Integrated"
-    state: started
-    attributes:
-      recycling.periodicRestart.time: "00:00:00"
-      processModel.idleTimeout: "00:20:00"
-      processModel.loadUserProfile: "true"
-      failure.rapidFailProtection: "true"
-      failure.rapidFailProtectionMaxCrashes: "5"
-
 # --- IIS general settings ---------------------------------------------------
 iis_default_site_name: "Default Web Site"
 iis_default_app_pool: "DefaultAppPool"
