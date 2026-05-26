@@ -158,12 +158,10 @@ jobs:
       - name: Configure DrvFs metadata and restart WSL
         shell: powershell
         run: |
-          $wslConf = @"
-          [automount]
-          enabled = true
-          options = "metadata,uid=1000,gid=1000,fmask=022,dmask=022"
-          "@
-          $wslConf | wsl --exec tee /etc/wsl.conf
+          # Write wsl.conf via bash printf to avoid Windows CRLF line endings.
+          # PowerShell here-strings produce \r\n which WSL's wsl.conf parser
+          # rejects as invalid key names.
+          wsl --exec sh -c "printf '[automount]\nenabled = true\noptions = ""metadata,uid=1000,gid=1000,fmask=022,dmask=022""\n' > /etc/wsl.conf"
           wsl --shutdown
 
       - name: Install Ansible in WSL
