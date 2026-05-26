@@ -270,13 +270,27 @@ jobs:
               $httpOk = $true
               break
             } catch [System.Net.WebException] {
-              if ($_.Exception.Response -ne $null) {
-                $code = [int]$_.Exception.Response.StatusCode
+              $webEx = $_.Exception
+              if ($webEx.Response -ne $null) {
+                $code = [int]$webEx.Response.StatusCode
                 Write-Host "HTTP check: $code from $url (error response accepted)"
                 $httpOk = $true
                 break
               }
-              Write-Host "Attempt $attempt of $maxAttempts failed: $($_.Exception.Message)"
+              Write-Host "Attempt $attempt of $maxAttempts failed"
+              Write-Host "  Type   : $($webEx.GetType().FullName)"
+              Write-Host "  Status : $($webEx.Status)"
+              Write-Host "  Message: $($webEx.Message)"
+              if ($webEx.InnerException) {
+                Write-Host "  Inner  : $($webEx.InnerException.GetType().FullName): $($webEx.InnerException.Message)"
+              }
+              Write-Host "  Stack  : $($webEx.StackTrace)"
+              if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 3 }
+            } catch {
+              Write-Host "Attempt $attempt of $maxAttempts failed (unexpected exception)"
+              Write-Host "  Type   : $($_.Exception.GetType().FullName)"
+              Write-Host "  Message: $($_.Exception.Message)"
+              Write-Host "  Stack  : $($_.Exception.StackTrace)"
               if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 3 }
             }
           }
