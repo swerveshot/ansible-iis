@@ -233,3 +233,56 @@
       - "Log directory:    {{ iis_verify.result.log_dir }}"
       - "Compression temp: {{ iis_verify.result.compress_dir }}"
   tags: [iis_configure]
+
+# --- Verify default IIS firewall rules --------------------------------------
+# IIS installation activates two built-in Windows Firewall rules for HTTP and
+# HTTPS. Verify they exist and are enabled for all profiles (Domain, Private,
+# Public). If a rule is disabled or scoped to a subset of profiles, correct it.
+- name: Verify default IIS firewall rules are enabled for all profiles
+  ansible.windows.win_powershell:
+    script: |
+      $rules = @(
+        "World Wide Web Services (HTTP Traffic-In)",
+        "World Wide Web Services (HTTPS Traffic-In)"
+      )
+      $results = @()
+      $changed = $false
+
+      foreach ($displayName in $rules) {
+        $rule = Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue
+        if (-not $rule) {
+          Write-Error "Default IIS firewall rule '$displayName' not found. Verify IIS Windows features are installed."
+          exit 1
+        }
+
+        $updates = @()
+
+        if ($rule.Enabled -ne $true) {
+          Enable-NetFirewallRule -DisplayName $displayName
+          $updates += "enabled"
+          $changed = $true
+        }
+
+        if ($rule.Profile -ne 'Any') {
+          Set-NetFirewallRule -DisplayName $displayName -Profile Any
+          $updates += "profile set to Any"
+          $changed = $true
+        }
+
+        $status = if ($updates.Count -gt 0) { "updated ($($updates -join ', '))" } else { "ok" }
+        $results += "$displayName`: $status"
+      }
+
+      $Ansible.Result = $results
+      $Ansible.Changed = $changed
+  register: iis_firewall_check
+  tags:
+    - iis_configure
+    - firewall
+
+- name: Show IIS firewall rule status
+  ansible.builtin.debug:
+    msg: "{{ iis_firewall_check.result }}"
+  tags:
+    - iis_configure
+    - firewall

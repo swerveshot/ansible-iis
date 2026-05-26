@@ -38,25 +38,6 @@ iis_https_port: 443
 iis_log_format: "W3C"
 iis_log_period: "Daily"
 
-# --- Windows Firewall settings ----------------------------------------------
-# Allow HTTP and HTTPS traffic through Windows Firewall
-iis_firewall_rules:
-  - name: "IIS HTTP inbound"
-    description: "Allow HTTP traffic to IIS"
-    localport: "80"
-    protocol: TCP
-    direction: in
-    action: allow
-    enabled: true
-
-  - name: "IIS HTTPS inbound"
-    description: "Allow HTTPS traffic to IIS"
-    localport: "443"
-    protocol: TCP
-    direction: in
-    action: allow
-    enabled: true
-
 # --- Temporary download location --------------------------------------------
 # Temporary directory on the target server for installation files
 iis_temp_download_path: "C:\\Temp\\ansible_downloads"

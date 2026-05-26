@@ -39,22 +39,6 @@
     - os_requirements
     - directory_structure
 
-# --- Configure Windows Firewall rules ---------------------------------------
-- name: Configure Windows Firewall rules for IIS
-  community.windows.win_firewall_rule:
-    name: "{{ item.name }}"
-    description: "{{ item.description }}"
-    localport: "{{ item.localport }}"
-    protocol: "{{ item.protocol }}"
-    direction: "{{ item.direction }}"
-    action: "{{ item.action }}"
-    enabled: "{{ item.enabled }}"
-    state: present
-  loop: "{{ iis_firewall_rules }}"
-  tags:
-    - os_requirements
-    - firewall
-
 # --- Configure Windows Pagefile ---------------------------------------------
 # Ensure the pagefile is on C:\ and not on D:\ (D:\ is for application data)
 - name: Check pagefile location
