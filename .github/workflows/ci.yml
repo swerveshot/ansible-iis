@@ -150,17 +150,25 @@ jobs:
           update: "true"
           additional-packages: python3-pip python3-venv
 
+      # Write /etc/wsl.conf with DrvFs metadata before the first wsl-bash step.
+      # After wsl --shutdown the next wsl-bash invocation restarts WSL and
+      # automounts D: with metadata so files are not world-writable (0644
+      # instead of 0777). This allows Ansible to read ansible.cfg from the
+      # workspace directly without copying it to the Linux filesystem.
+      - name: Configure DrvFs metadata and restart WSL
+        shell: powershell
+        run: |
+          $wslConf = @"
+          [automount]
+          enabled = true
+          options = "metadata,uid=1000,gid=1000,fmask=022,dmask=022"
+          "@
+          $wslConf | wsl --exec tee /etc/wsl.conf
+          wsl --shutdown
+
       - name: Install Ansible in WSL
         shell: wsl-bash {0}
         run: |
-          # Remount the Windows workspace drive with DrvFs metadata support.
-          # Without metadata, NTFS files appear world-writable (0777) in WSL,
-          # causing Ansible to ignore ansible.cfg as a security measure.
-          # pushd/popd moves away from /mnt/d before unmounting to avoid EBUSY.
-          pushd /tmp
-          sudo umount /mnt/d
-          sudo mount -t drvfs D: /mnt/d -o metadata,uid=1000,gid=1000,fmask=022,dmask=022
-          popd
           python3 -m venv /tmp/ansible-venv
           /tmp/ansible-venv/bin/pip install -q -r requirements.txt
 
