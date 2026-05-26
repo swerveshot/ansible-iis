@@ -239,7 +239,7 @@ jobs:
               foreach ($l in $listeners) {
                 $proc = Get-Process -Id $l.OwningProcess -ErrorAction SilentlyContinue
                 $procName = if ($proc) { $proc.Name } else { "unknown" }
-                Write-Host "Port $port listening on $($l.LocalAddress) — PID $($l.OwningProcess) ($procName)"
+                Write-Host "Port $port listening on $($l.LocalAddress) - PID $($l.OwningProcess) ($procName)"
               }
             } else {
               Write-Host "Port $port is NOT listening"
