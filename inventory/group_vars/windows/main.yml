@@ -1,6 +1,6 @@
 ---
 # =============================================================================
-# inventory/group_vars/windows/main.yml - WinRM connection settings
+# inventory/group_vars/windows/main.yml - PSRP connection settings
 # =============================================================================
 # SECURITY: This file contains NO credentials or usernames.
 # Store those in an Ansible Vault file that never ends up in git.
@@ -17,29 +17,35 @@
 #   ansible_password: "{{ vault_ansible_password }}"
 
 # --- Connection type --------------------------------------------------------
-ansible_connection: winrm
+# psrp (PowerShell Remoting Protocol) is faster than winrm because it
+# supports pipelining: tasks reuse the same connection instead of
+# opening a new one for each module invocation.
+ansible_connection: psrp
 
 # --- Authentication ---------------------------------------------------------
-# Credentials come from vault.yml (see instructions above).
-# Do NOT remove the lines below — they reference the vault variables.
 ansible_user: "{{ vault_ansible_user }}"
 ansible_password: "{{ vault_ansible_password }}"
 
-# Transport: ntlm (workgroup) or kerberos (Active Directory, recommended)
-# For kerberos: pip install pywinrm[kerberos] + krb5-user OS package
-ansible_winrm_transport: ntlm
+# Auth protocol: ntlm (workgroup), kerberos (Active Directory, recommended),
+# negotiate (auto-selects between ntlm and kerberos).
+# For kerberos: pip install 'pypsrp[kerberos]' + krb5-user OS package.
+ansible_psrp_auth: ntlm
 
 # --- Protocol and port ------------------------------------------------------
-# HTTPS (5986) = required for production; HTTP (5985) only in isolated test environments
+# HTTPS (5986) required for production; HTTP (5985) only in isolated test environments.
 ansible_port: 5986
-ansible_winrm_scheme: https
+ansible_psrp_protocol: https
 
 # --- Certificate validation -------------------------------------------------
 # Default: ignore (for self-signed certificates in test/development).
 # Override in otap_p/main.yml to 'validate' for production.
-ansible_winrm_server_cert_validation: ignore
+ansible_psrp_cert_validation: ignore
+
+# --- Pipelining (key PSRP advantage over winrm) ----------------------------
+# Pipelining lets multiple tasks share a single connection, avoiding the
+# per-task setup overhead. Not available with ansible_connection: winrm.
+ansible_pipelining: true
 
 # --- Timeouts ---------------------------------------------------------------
-# Wider timeouts needed for long Windows operations (.NET installs, reboots)
-ansible_winrm_operation_timeout_sec: 120
-ansible_winrm_read_timeout_sec: 130
+ansible_psrp_connection_timeout: 120
+ansible_psrp_read_timeout: 130

@@ -233,6 +233,46 @@ is verantwoordelijk voor de integriteit van bestanden op de interne share.
   (`--tags dotnet_8`). Drie aparte includes met eigen tags is de enige correcte oplossing.
 - Drie gerelateerde log-instellingen zitten in één PowerShell-aanroep in `iis_configure.yml`
 
+### Verbinding: PSRP in plaats van WinRM
+
+Ansible verbindt met Windows via `ansible_connection: psrp` (PyPSRP library).
+PSRP is gekozen boven `winrm` (PyWinRM) vanwege:
+
+| Eigenschap | PSRP | WinRM |
+|---|---|---|
+| Pipelining | ✓ Ja | ✗ Nee |
+| Per-taak overhead | Laag (hergebruikt verbinding) | Hoog (nieuwe verbinding per taak) |
+| Authenticatie | basic, ntlm, kerberos, negotiate | idem |
+| Transport | zelfde HTTP/HTTPS poorten (5985/5986) | idem |
+
+**Variabelenamen (PSRP):**
+```yaml
+ansible_psrp_auth: ntlm               # i.p.v. ansible_winrm_transport
+ansible_psrp_protocol: https          # i.p.v. ansible_winrm_scheme
+ansible_psrp_cert_validation: ignore  # i.p.v. ansible_winrm_server_cert_validation
+ansible_psrp_connection_timeout: 120  # i.p.v. ansible_winrm_operation_timeout_sec
+ansible_psrp_read_timeout: 130        # i.p.v. ansible_winrm_read_timeout_sec
+ansible_pipelining: true              # nieuw — niet beschikbaar bij winrm
+```
+
+**CI-vereiste:** `Enable-PSRemoting -Force -SkipNetworkProfileCheck` staat vóór
+`winrm quickconfig` in de workflow — PSRP heeft PowerShell Remoting endpoints nodig.
+
+**Python dependency:** `pypsrp[ntlm]>=0.7.0` (vervangt `pywinrm` + `requests-ntlm`
++ `xmltodict` in requirements.txt).
+
+### PowerShell ngen-optimalisatie
+
+`os_requirements.yml` bevat een taak die PowerShell assemblies pre-compileert
+via ngen (native image generator). Dit versnelt de PowerShell-opstarttijd met
+~10× en vermindert overhead bij elke Ansible module-aanroep.
+
+- Bron: [Ansible Windows performance guide](https://docs.ansible.com/projects/ansible/latest/os_guide/windows_performance.html)
+- Locatie: eerste `pre_task` in `playbooks/site.yml` — draait vóór alle role-taken
+- Idempotent: heruitvoering wanneer native images al bestaan is veilig en snel
+- Tag: `ps_optimize` (alleen met `--tags ps_optimize` of als onderdeel van een volledige run)
+- Rapporteert altijd `changed: false` — het is optimalisatie, geen configuratie
+
 ### Beveiliging
 - Geen credentials of gebruikersnamen in de rol of in git
 - `ansible_user` en `ansible_password` komen altijd uit `vault.yml` (staat in .gitignore)
@@ -254,7 +294,7 @@ all → windows → otap_o (Ontwikkeling)
                 otap_a (Acceptatie)
                 otap_p (Productie)
 ```
-- Productie: `ansible_winrm_server_cert_validation: validate` (CA-certificaat)
+- Productie: `ansible_psrp_cert_validation: validate` (CA-certificaat)
 - Overig:    `ignore` (zelfondertekend certificaat toegestaan)
 - HTTP toegestaan in O en T, alleen HTTPS in A en P
 
@@ -269,6 +309,7 @@ all → windows → otap_o (Ontwikkeling)
 | Tag                   | Wat het doet |
 |-----------------------|--------------|
 | `os_requirements`     | Tijdzone, mapstructuur, TLS, firewall, pagefile |
+| `ps_optimize`         | PowerShell ngen-optimalisatie (pre_task in site.yml, niet in de rol) |
 | `iis_features`        | Windows features installeren |
 | `iis_configure`       | IIS paden, logging, app pools, beveiliging |
 | `iis_rewrite`         | URL Rewrite Module 2.1 |
@@ -325,9 +366,9 @@ ansible-lint --nocolor
 - **integration** job: `windows-2022` GitHub-hosted runner, draait na lint en syntax
 
 ### Hoe de integration job werkt
-De Windows runner configureert WinRM op zichzelf (`127.0.0.1:5985`, HTTP basic,
-tijdelijke lokale admin). Ansible draait via Python op dezelfde machine en
-verbindt terug via WinRM. Na de eerste run volgt een idempotency check (tweede
+De Windows runner configureert WinRM + PSRemoting op zichzelf (`127.0.0.1:5985`,
+HTTP basic, tijdelijke lokale admin). Ansible draait via Python op dezelfde machine
+en verbindt terug via PSRP. Na de eerste run volgt een idempotency check (tweede
 run moet `changed=0` rapporteren).
 
 ### CI-specifieke overrides (`ci/inventory/`)

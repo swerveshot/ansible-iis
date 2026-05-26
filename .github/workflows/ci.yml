@@ -122,6 +122,9 @@ jobs:
           $ciPassword = [System.Web.Security.Membership]::GeneratePassword(20, 4)
           "CI_ANSIBLE_PASSWORD=$ciPassword" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+          # Enable PowerShell Remoting (required for PSRP connection plugin)
+          Enable-PSRemoting -Force -SkipNetworkProfileCheck
+
           # Enable WinRM with HTTP basic auth
           winrm quickconfig -force
           winrm set winrm/config/service/auth '@{Basic="true"}'

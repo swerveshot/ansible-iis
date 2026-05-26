@@ -67,7 +67,7 @@
         $Ansible.Result = "Pagefile correctly configured on C:\"
       }
       $Ansible.Changed = $false
-  register: pagefile_check
+  register: iis_pagefile_check
   changed_when: false
   tags:
     - os_requirements
@@ -75,7 +75,7 @@
 
 - name: Show pagefile status
   ansible.builtin.debug:
-    msg: "{{ pagefile_check.result }}"
+    msg: "{{ iis_pagefile_check.result }}"
   tags:
     - os_requirements
     - pagefile
@@ -97,14 +97,14 @@
         $Ansible.Changed = $false
         $Ansible.Result = if ($highPerf) { "High Performance already active" } else { "High Performance plan not found" }
       }
-  register: power_plan_result
+  register: iis_power_plan_result
   tags:
     - os_requirements
     - power_plan
 
 - name: Show power plan status
   ansible.builtin.debug:
-    msg: "{{ power_plan_result.result }}"
+    msg: "{{ iis_power_plan_result.result }}"
   tags:
     - os_requirements
     - power_plan
@@ -132,7 +132,7 @@
         }
         $Ansible.Changed = $false
       }
-  register: update_check
+  register: iis_update_check
   tags:
     - os_requirements
     - windows_updates
@@ -140,9 +140,9 @@
 - name: Warning when there are pending Windows updates
   ansible.builtin.debug:
     msg: >
-      WARNING: There are {{ update_check.result.pending_updates }} pending
+      WARNING: There are {{ iis_update_check.result.pending_updates }} pending
       Windows updates. Consider installing them before putting IIS into production.
-  when: update_check.result.has_pending | bool
+  when: iis_update_check.result.has_pending | bool
   tags:
     - os_requirements
     - windows_updates
@@ -161,14 +161,14 @@
         $Ansible.Result = "NET Framework version below 4.8 (release: $release)"
         $Ansible.Changed = $false
       }
-  register: dotnet_framework_check
+  register: iis_dotnet_framework_check
   tags:
     - os_requirements
     - dotnet_framework
 
 - name: Show .NET Framework status
   ansible.builtin.debug:
-    msg: "{{ dotnet_framework_check.result }}"
+    msg: "{{ iis_dotnet_framework_check.result }}"
   tags:
     - os_requirements
     - dotnet_framework

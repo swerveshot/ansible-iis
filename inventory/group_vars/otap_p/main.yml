@@ -17,4 +17,4 @@ iis_allow_http: false
 iis_allow_https: true
 
 # Production uses a CA-signed certificate
-ansible_winrm_server_cert_validation: validate
+ansible_psrp_cert_validation: validate

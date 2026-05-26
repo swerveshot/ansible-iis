@@ -15,35 +15,25 @@ ansible-core>=2.16,<2.20
 # --- Ansible lint -----------------------------------------------------------
 ansible-lint>=24.0
 
-# --- WinRM verbinding -------------------------------------------------------
-# pywinrm: Python library voor WinRM communicatie met Windows hosts
-pywinrm>=0.4.3
+# --- PSRP verbinding --------------------------------------------------------
+# pypsrp: Python library voor PSRP (PowerShell Remoting Protocol).
+# Sneller dan pywinrm omdat PSRP pipelining ondersteunt (pywinrm niet):
+# taken hergebruiken dezelfde verbinding in plaats van per taak opnieuw verbinden.
+# [ntlm] extra voegt requests-ntlm toe voor NTLM-authenticatie.
+pypsrp[ntlm]>=0.7.0
 
-# requests: HTTP library (dependency van pywinrm)
+# requests: HTTP library (dependency van pypsrp)
 requests>=2.31.0
-
-# --- WinRM authenticatie ----------------------------------------------------
-# NTLM authenticatie (aanbevolen voor werkgroep/niet-domain omgevingen)
-requests-ntlm>=1.2.0
-
-# CredSSP authenticatie (vereist voor dubbele hop scenarios, bijv. UNC paden)
-# Uncomment als CredSSP gebruikt wordt:
-# requests-credssp>=2.0.0
 
 # Kerberos authenticatie (aanbevolen voor Active Directory omgevingen)
 # Uncomment als Kerberos gebruikt wordt en installeer ook:
 #   sudo apt-get install python3-dev libkrb5-dev krb5-user  (Ubuntu/Debian)
 #   sudo yum install python3-devel krb5-devel krb5-workstation  (RHEL/CentOS)
-# pywinrm[kerberos]
-# gssapi>=1.6.0
+# pypsrp[kerberos]
 
 # --- Ansible Vault ----------------------------------------------------------
 # Cryptography library voor Ansible Vault encryptie
 cryptography>=41.0.0
-
-# --- Overig -----------------------------------------------------------------
-# xmltodict: voor het parsen van WinRM XML responses
-xmltodict>=0.13.0
 
 # Jinja2: templating engine (wordt meegeleverd met ansible-core, maar
 # expliciet vermeld voor duidelijkheid)
