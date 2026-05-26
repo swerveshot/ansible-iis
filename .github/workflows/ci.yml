@@ -165,7 +165,7 @@ jobs:
           wsl --exec sh -c "printf '[automount]\nenabled = true\noptions = ""metadata,uid=1000,gid=1000,fmask=022,dmask=022""\n' > /etc/wsl.conf"
           # Set WSL timezone from iana_timezone in ci/inventory/group_vars/all.yml
           # so profile_tasks and timer callback timestamps match local time.
-          $tz = python3 -c "import yaml; print(yaml.safe_load(open('ci/inventory/group_vars/all.yml'))['iana_timezone'])"
+          $tz = (Select-String -Path 'ci/inventory/group_vars/all.yml' -Pattern '^iana_timezone:\s+"([^"]+)"').Matches.Groups[1].Value
           wsl --exec sh -c "ln -sf /usr/share/zoneinfo/$tz /etc/localtime"
           wsl --shutdown
 
