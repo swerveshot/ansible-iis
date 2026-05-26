@@ -252,3 +252,35 @@ jobs:
             exit 1
           }
           Write-Host "All required ports are listening."
+
+          # HTTP smoke test: any response from IIS proves it is serving requests.
+          # An empty wwwroot returns 403.14 (directory listing disabled), not 404.
+          # Bypass system proxy and force a new TCP connection each attempt to
+          # avoid keep-alive connection reuse across retries.
+          [System.Net.WebRequest]::DefaultWebProxy = [System.Net.GlobalProxySelection]::GetEmptyWebProxy()
+          $url = "http://127.0.0.1/"
+          $maxAttempts = 5
+          $httpOk = $false
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            [System.Net.ServicePointManager]::FindServicePoint($url).CloseConnectionGroup("") | Out-Null
+            try {
+              $response = Invoke-WebRequest -Uri $url -TimeoutSec 10 `
+                -Headers @{ "Connection" = "close" } -UseBasicParsing -ErrorAction Stop
+              Write-Host "HTTP check: $($response.StatusCode) from $url"
+              $httpOk = $true
+              break
+            } catch [System.Net.WebException] {
+              if ($_.Exception.Response -ne $null) {
+                $code = [int]$_.Exception.Response.StatusCode
+                Write-Host "HTTP check: $code from $url (error response accepted)"
+                $httpOk = $true
+                break
+              }
+              Write-Host "Attempt $attempt of $maxAttempts failed: $($_.Exception.Message)"
+              if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 3 }
+            }
+          }
+          if (-not $httpOk) {
+            Write-Error "IIS did not respond over HTTP after $maxAttempts attempts"
+            exit 1
+          }
