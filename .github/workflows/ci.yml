@@ -154,8 +154,8 @@ jobs:
       # settings take effect:
       # - DrvFs metadata: files on NTFS mounts get proper permissions (0644
       #   instead of 0777), allowing Ansible to read ansible.cfg directly.
-      # - Timezone: set /etc/localtime so profile_tasks/timer callbacks show
-      #   local time instead of UTC.
+      # - Timezone: export TZ to GITHUB_ENV so all wsl-bash steps inherit it
+      #   via WSLENV; profile_tasks/timer callbacks then show local time.
       - name: Configure WSL (DrvFs metadata, timezone) and restart
         shell: powershell
         run: |
@@ -163,10 +163,11 @@ jobs:
           # PowerShell here-strings produce \r\n which WSL's wsl.conf parser
           # rejects as invalid key names.
           wsl --exec sh -c "printf '[automount]\nenabled = true\noptions = ""metadata,uid=1000,gid=1000,fmask=022,dmask=022""\n' > /etc/wsl.conf"
-          # Set WSL timezone from iana_timezone in ci/inventory/group_vars/all.yml
-          # so profile_tasks and timer callback timestamps match local time.
+          # Export iana_timezone from CI group_vars as TZ so all subsequent
+          # wsl-bash steps inherit it via WSLENV. This is more reliable than
+          # setting /etc/localtime, which Python may not pick up in WSL.
           $tz = (Select-String -Path 'ci/inventory/group_vars/all.yml' -Pattern '^iana_timezone:\s+"([^"]+)"').Matches.Groups[1].Value
-          wsl --exec sh -c "ln -sf /usr/share/zoneinfo/$tz /etc/localtime"
+          "TZ=$tz" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           wsl --shutdown
 
       - name: Install Ansible in WSL
@@ -197,7 +198,7 @@ jobs:
         shell: wsl-bash {0}
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
+          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS:TZ
         run: |
           # WSL 2: use default gateway. WSL 1: no default route, use 127.0.0.1.
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
@@ -219,7 +220,7 @@ jobs:
         shell: wsl-bash {0}
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
+          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS:TZ
         run: |
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
