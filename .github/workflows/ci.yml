@@ -227,11 +227,33 @@ jobs:
       - name: Verify IIS responds on port 80
         shell: powershell
         run: |
-          Start-Sleep -Seconds 5
-          try {
-            $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 15
-            Write-Host "IIS responded with HTTP $($response.StatusCode)"
-          } catch {
-            Write-Error "IIS did not respond: $_"
+          # Diagnostics: what is listening on port 80 and IIS site state
+          Write-Host "=== netstat port 80 ==="
+          netstat -ano | findstr ":80 "
+          Write-Host "=== IIS W3SVC service state ==="
+          (Get-Service W3SVC).Status
+          Write-Host "=== Default Web Site state ==="
+          Import-Module WebAdministration
+          Get-Website -Name "Default Web Site" | Select-Object Name, State, PhysicalPath | Format-List
+          Write-Host "=== Bindings ==="
+          Get-WebBinding -Name "Default Web Site" | Format-List
+
+          # Retry loop: IIS may need time to fully initialise after the playbook
+          $maxAttempts = 12
+          $attempt = 0
+          $success = $false
+          while ($attempt -lt $maxAttempts -and -not $success) {
+            $attempt++
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 10
+              Write-Host "IIS responded with HTTP $($response.StatusCode) (attempt $attempt)"
+              $success = $true
+            } catch {
+              Write-Host "Attempt $attempt/$maxAttempts failed: $_"
+              if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 5 }
+            }
+          }
+          if (-not $success) {
+            Write-Error "IIS did not respond on port 80 after $maxAttempts attempts"
             exit 1
           }
