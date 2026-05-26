@@ -266,14 +266,17 @@ jobs:
             try {
               $response = Invoke-WebRequest -Uri $url -TimeoutSec 10 `
                 -UseBasicParsing -ErrorAction Stop
-              Write-Host "HTTP check: $($response.StatusCode) from $url"
+              Write-Host "HTTP check: $($response.StatusCode) $($response.StatusDescription) from $url"
+              Write-Host "  Server: $($response.Headers['Server'])"
               $httpOk = $true
               break
             } catch [System.Net.WebException] {
               $webEx = $_.Exception
               if ($webEx.Response -ne $null) {
-                $code = [int]$webEx.Response.StatusCode
-                Write-Host "HTTP check: $code from $url (error response accepted)"
+                $resp = $webEx.Response
+                $code = [int]$resp.StatusCode
+                Write-Host "HTTP check: $code $($resp.StatusDescription) from $url (error response accepted)"
+                Write-Host "  Server: $($resp.Headers['Server'])"
                 $httpOk = $true
                 break
               }
