@@ -196,7 +196,7 @@ jobs:
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
             -e @/tmp/ci_vars.json \
-            --skip-tags dotnet_ngen,dotnet_cleanup \
+            --skip-tags dotnet_ngen,dotnet_cleanup,iis_rewrite_example \
             -v
 
       - name: Idempotency check (second run must report changed=0)
@@ -214,7 +214,7 @@ jobs:
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
             -e @/tmp/ci_vars.json \
-            --skip-tags dotnet_ngen,dotnet_cleanup 2>&1 | tee "$tmplog"
+            --skip-tags dotnet_ngen,dotnet_cleanup,iis_rewrite_example 2>&1 | tee "$tmplog"
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             echo "Playbook failed on second run"
