@@ -14,11 +14,13 @@
     script: |
       Import-Module WebAdministration -ErrorAction Stop
       $changed = $false
-      $debug   = @()
 
       # IIS stores enum properties as plain integers, not typed enums.
       # Values from IIS_schema.xml: logFormat IIS=0,NCSA=1,W3C=2,Custom=3;
       # period MaxSize=0,Daily=1,Weekly=2,Monthly=3,Hourly=4.
+      # When a property equals the schema default, IIS omits it from
+      # applicationHost.config and Get-WebConfigurationProperty returns $null.
+      # Treat $null as "already at default, no change needed."
       $enumMaps = @{
         logFormat = @{ IIS=0; NCSA=1; W3C=2; Custom=3 }
         period    = @{ MaxSize=0; Daily=1; Weekly=2; Monthly=3; Hourly=4 }
@@ -43,16 +45,14 @@
         foreach ($prop in $setting.props.GetEnumerator()) {
           $raw = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
             -filter $setting.filter -name $prop.Key).Value
-          $rawType = if ($null -ne $raw) { $raw.GetType().FullName } else { 'null' }
 
           $needsChange = if ($enumMaps.ContainsKey($prop.Key)) {
-            [int]$raw -ne $enumMaps[$prop.Key][$prop.Value]
+            # null means IIS is using the schema default; assume it already matches
+            ($null -ne $raw) -and ([int]$raw -ne $enumMaps[$prop.Key][$prop.Value])
           } else {
             $current = if ($raw -is [System.Enum]) { $raw.ToString() } else { [string]$raw }
             $current -ine $prop.Value
           }
-
-          $debug += "$($prop.Key): raw='$raw' ($rawType) desired='$($prop.Value)' needsChange=$needsChange"
 
           if ($needsChange) {
             Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
@@ -61,7 +61,6 @@
           }
         }
       }
-      $Ansible.Result  = $debug
       $Ansible.Changed = $changed
   notify: "restart iis"
   tags:
