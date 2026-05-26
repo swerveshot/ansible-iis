@@ -14,6 +14,7 @@
     script: |
       Import-Module WebAdministration -ErrorAction Stop
       $changed = $false
+      $debug   = @()
 
       # IIS stores enum properties as plain integers, not typed enums.
       # Values from IIS_schema.xml: logFormat IIS=0,NCSA=1,W3C=2,Custom=3;
@@ -42,6 +43,7 @@
         foreach ($prop in $setting.props.GetEnumerator()) {
           $raw = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
             -filter $setting.filter -name $prop.Key).Value
+          $rawType = if ($null -ne $raw) { $raw.GetType().FullName } else { 'null' }
 
           $needsChange = if ($enumMaps.ContainsKey($prop.Key)) {
             [int]$raw -ne $enumMaps[$prop.Key][$prop.Value]
@@ -50,6 +52,8 @@
             $current -ine $prop.Value
           }
 
+          $debug += "$($prop.Key): raw='$raw' ($rawType) desired='$($prop.Value)' needsChange=$needsChange"
+
           if ($needsChange) {
             Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
               -filter $setting.filter -name $prop.Key -value $prop.Value
@@ -57,6 +61,7 @@
           }
         }
       }
+      $Ansible.Result  = $debug
       $Ansible.Changed = $changed
   notify: "restart iis"
   tags:
