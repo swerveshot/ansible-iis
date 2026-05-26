@@ -96,6 +96,27 @@
     - iis_configure
     - default_site
 
+# microsoft.iis.website removes existing bindings when it modifies the site.
+# Restore the HTTP binding if absent so IIS keeps listening on port 80.
+- name: Ensure Default Web Site has HTTP binding on port {{ iis_http_port }}
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $siteName = "{{ iis_default_site_name }}"
+      $existing = Get-WebBinding -Name $siteName -Protocol "http" `
+        -Port {{ iis_http_port }} -ErrorAction SilentlyContinue
+      if (-not $existing) {
+        New-WebBinding -Name $siteName -Protocol "http" `
+          -Port {{ iis_http_port }} -IPAddress "*"
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+  notify: "restart iis"
+  tags:
+    - iis_configure
+    - default_site
+
 # --- Site-specific log directory --------------------------------------------
 - name: Create and configure log directory for Default Web Site
   tags:
@@ -190,11 +211,14 @@
         -filter "system.applicationHost/sites/siteDefaults/logFile" -name "directory").Value
       $compDir = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
         -filter "system.webServer/httpCompression" -name "directory").Value
+      $bindings = (Get-WebBinding -Name "{{ iis_default_site_name }}") |
+        ForEach-Object { "$($_.protocol)://$($_.bindingInformation)" }
       $Ansible.Result  = @{
         site_path    = $site.PhysicalPath
         site_state   = $site.State
         log_dir      = $logDir
         compress_dir = $compDir
+        bindings     = $bindings
       }
       $Ansible.Changed = $false
   register: iis_verify
@@ -205,6 +229,7 @@
     msg:
       - "Site path:        {{ iis_verify.result.site_path }}"
       - "Site state:       {{ iis_verify.result.site_state }}"
+      - "Bindings:         {{ iis_verify.result.bindings }}"
       - "Log directory:    {{ iis_verify.result.log_dir }}"
       - "Compression temp: {{ iis_verify.result.compress_dir }}"
   tags: [iis_configure]
