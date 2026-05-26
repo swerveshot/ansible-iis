@@ -178,19 +178,28 @@ jobs:
             sleep 15
           done
 
-      - name: Run Ansible playbook from WSL
+      # Write credentials JSON once; both playbook runs read the same file.
+      # Special chars (e.g. {%) in the generated password must not pass through
+      # the shell or Ansible's -e flag to avoid Jinja2 misinterpretation.
+      - name: Prepare Ansible connection variables
         shell: wsl-bash {0}
         env:
           CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
+          WSLENV: CI_ANSIBLE_PASSWORD
         run: |
           # WSL 2: use default gateway. WSL 1: no default route, use 127.0.0.1.
           WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
           [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
           echo "Windows host IP: $WIN_HOST_IP"
-          # Write credentials to JSON so special chars (e.g. {%) in the
-          # generated password are not misinterpreted as Jinja2 by Ansible
+          echo "WIN_HOST_IP=$WIN_HOST_IP" >> "$GITHUB_ENV"
           python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
+
+      - name: Run Ansible playbook from WSL
+        shell: wsl-bash {0}
+        env:
+          WIN_HOST_IP: ${{ env.WIN_HOST_IP }}
+          WSLENV: WIN_HOST_IP:ANSIBLE_FORCE_COLOR:PY_COLORS
+        run: |
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
           /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
@@ -202,12 +211,9 @@ jobs:
       - name: Idempotency check (second run must report changed=0)
         shell: wsl-bash {0}
         env:
-          CI_ANSIBLE_PASSWORD: ${{ env.CI_ANSIBLE_PASSWORD }}
-          WSLENV: CI_ANSIBLE_PASSWORD:ANSIBLE_FORCE_COLOR:PY_COLORS
+          WIN_HOST_IP: ${{ env.WIN_HOST_IP }}
+          WSLENV: WIN_HOST_IP:ANSIBLE_FORCE_COLOR:PY_COLORS
         run: |
-          WIN_HOST_IP=$(ip route | awk '/^default/ {print $3; exit}')
-          [ -z "$WIN_HOST_IP" ] && WIN_HOST_IP="127.0.0.1"
-          python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
           tmplog=$(mktemp)
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
