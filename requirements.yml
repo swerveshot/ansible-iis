@@ -27,6 +27,13 @@ collections:
   - name: microsoft.iis
     version: ">=1.1.0"
 
+  # --- ansible.posix ---------------------------------------------------------
+  # POSIX-platform modules and plugins, including the profile_tasks callback
+  # (listed in callbacks_enabled in ansible.cfg).
+  # See: https://docs.ansible.com/ansible/latest/collections/ansible/posix/
+  - name: ansible.posix
+    version: ">=1.5.0"
+
   # --- community.windows -----------------------------------------------------
   # Extended Windows modules: win_firewall_rule, win_disk_facts,
   # win_initialize_disk, win_dotnet_ngen, etc.
