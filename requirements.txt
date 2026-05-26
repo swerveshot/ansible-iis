@@ -19,8 +19,9 @@ ansible-lint>=24.0
 # pypsrp: Python library voor PSRP (PowerShell Remoting Protocol).
 # Sneller dan pywinrm omdat PSRP pipelining ondersteunt (pywinrm niet):
 # taken hergebruiken dezelfde verbinding in plaats van per taak opnieuw verbinden.
-# [ntlm] extra voegt requests-ntlm toe voor NTLM-authenticatie.
-pypsrp[ntlm]>=0.7.0
+# Basic auth over HTTP does not require NTLM; pypsrp 0.9.x no longer declares
+# the [ntlm] extra so omit it to silence the pip warning.
+pypsrp>=0.7.0
 
 # requests: HTTP library (dependency van pypsrp)
 requests>=2.31.0

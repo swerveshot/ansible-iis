@@ -202,6 +202,7 @@ jobs:
           # generated password are not misinterpreted as Jinja2 by Ansible
           python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
+          ANSIBLE_CACHE_PLUGIN=memory \
           /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \
@@ -220,6 +221,7 @@ jobs:
           python3 -c "import json,os; open('/tmp/ci_vars.json','w').write(json.dumps({'ansible_user':'ansible-ci','ansible_password':os.environ['CI_ANSIBLE_PASSWORD']}))"
           tmplog=$(mktemp)
           ANSIBLE_ROLES_PATH=roles ANSIBLE_COLLECTIONS_PATH=collections \
+          ANSIBLE_CACHE_PLUGIN=memory \
             /tmp/ansible-venv/bin/ansible-playbook playbooks/site.yml \
             -i ci/inventory/hosts.yml \
             -e "ansible_host=$WIN_HOST_IP" \

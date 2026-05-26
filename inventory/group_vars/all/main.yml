@@ -5,6 +5,11 @@
 # These variables apply to ALL hosts in all environments.
 # Environment-specific overrides are in the otap_*/main.yml files.
 
+# --- Ansible managed header --------------------------------------------------
+# Shown at the top of files generated from templates.
+# Defined here (not in ansible.cfg) to avoid DEFAULT_MANAGED_STR deprecation.
+ansible_managed: "Managed by Ansible - manual changes will be overwritten"
+
 # --- Timezone ----------------------------------------------------------------
 # Timezone for the target server (Windows timezone name)
 server_timezone: "W. Europe Standard Time"
