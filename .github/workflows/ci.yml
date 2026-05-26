@@ -230,40 +230,21 @@ jobs:
       - name: Verify IIS responds on port 80
         shell: powershell
         run: |
-          # Diagnostics: what is listening on port 80 and IIS site state
-          Write-Host "=== netstat port 80 ==="
-          netstat -ano | findstr ":80 "
-          Write-Host "=== IIS W3SVC service state ==="
-          (Get-Service W3SVC).Status
-          Write-Host "=== Default Web Site state ==="
-          Import-Module WebAdministration
-          Get-Website -Name "Default Web Site" | Select-Object Name, State, PhysicalPath | Format-List
-          Write-Host "=== Bindings ==="
-          Get-WebBinding -Name "Default Web Site" | Format-List
-
-          # Retry loop: IIS may need time to fully initialise after the playbook
+          # Use curl.exe (ships with Windows Server 2022) instead of
+          # Invoke-WebRequest to avoid HTTP keep-alive connection reuse issues
+          # that cause spurious "Unable to connect" errors on subsequent retries.
+          # Accept any HTTP status (200, 403, 404) as proof IIS is serving.
           $maxAttempts = 12
           $attempt = 0
           $success = $false
           while ($attempt -lt $maxAttempts -and -not $success) {
             $attempt++
-            try {
-              $response = Invoke-WebRequest -Uri "http://127.0.0.1" -UseBasicParsing -TimeoutSec 10
-              Write-Host "IIS responded with HTTP $($response.StatusCode) (attempt $attempt)"
+            $httpCode = & curl.exe -s -o $null -w "%{http_code}" --max-time 10 http://127.0.0.1/
+            if ($httpCode -match '^\d{3}$' -and [int]$httpCode -gt 0) {
+              Write-Host "IIS responded with HTTP $httpCode (attempt $attempt)"
               $success = $true
-            } catch {
-              Write-Host "Attempt $attempt/$maxAttempts failed: $_"
-              # Diagnose site/pool state after each failure
-              $site = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
-              Write-Host "  Site state: $($site.State)"
-              try {
-                $poolState = (Get-WebAppPoolState -Name "DefaultAppPool").Value
-                Write-Host "  App pool state: $poolState"
-              } catch {
-                Write-Host "  App pool state: (error reading)"
-              }
-              Write-Host "  netstat :80:"
-              netstat -ano | findstr ":80 "
+            } else {
+              Write-Host "Attempt $attempt/$maxAttempts: no HTTP response (curl output: $httpCode)"
               if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 5 }
             }
           }
