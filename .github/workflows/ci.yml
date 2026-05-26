@@ -265,7 +265,7 @@ jobs:
             [System.Net.ServicePointManager]::FindServicePoint($url).CloseConnectionGroup("") | Out-Null
             try {
               $response = Invoke-WebRequest -Uri $url -TimeoutSec 10 `
-                -Headers @{ "Connection" = "close" } -UseBasicParsing -ErrorAction Stop
+                -UseBasicParsing -ErrorAction Stop
               Write-Host "HTTP check: $($response.StatusCode) from $url"
               $httpOk = $true
               break
