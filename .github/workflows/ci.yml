@@ -20,7 +20,8 @@ on:
   push:
     branches: ["**"]
     paths-ignore:
-      - "**.md"
+      - "*.md"
+      - "**/*.md"
   pull_request:
     branches: [main]
 

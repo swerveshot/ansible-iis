@@ -371,7 +371,9 @@ ansible-lint --nocolor
 ### Architectuur
 - **lint + syntax** jobs: Ubuntu runner, draaien op elke push
 - **integration** job: `windows-2022` GitHub-hosted runner, draait na lint en syntax
-- Pushes die **alleen `.md`-bestanden** wijzigen triggeren de CI niet (`paths-ignore: ["**.md"]`)
+- Pushes die **alleen `.md`-bestanden** wijzigen triggeren de CI niet
+  (`paths-ignore: ["*.md", "**/*.md"]` — twee patronen omdat `**.md` in GitHub Actions
+  niet betrouwbaar root-level bestanden matcht)
 
 ### Hoe de integration job werkt
 De Windows runner configureert WinRM + PSRemoting op zichzelf (`127.0.0.1:5985`,
