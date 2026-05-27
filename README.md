@@ -20,7 +20,7 @@ Ansible project for automated installation and configuration of IIS on Windows S
 | OS           | Linux (Ubuntu 22.04+ / RHEL 9+) |
 | Python       | 3.11+                           |
 | ansible-core | 2.16+                           |
-| pywinrm      | 0.4.3+                          |
+| pypsrp       | 0.7.0+                          |
 
 ### Target server (Windows)
 
@@ -28,21 +28,24 @@ Ansible project for automated installation and configuration of IIS on Windows S
 |----------------|--------------------------------------|
 | OS             | Windows Server 2022                  |
 | PowerShell     | 5.1+                                 |
-| .NET Framework | 4.7.2+ (for WinRM)                   |
-| WinRM          | Configured (see below)               |
+| .NET Framework | 4.7.2+ (for PSRemoting)              |
+| PSRemoting     | Enabled (see below)                  |
 | Disk layout    | C:\ (OS), D:\ (data)                 |
 | Firewall       | TCP 5986 open from control node      |
 
-### Configure WinRM on the target server
+### Configure PSRemoting on the target server
+
+Ansible connects via **PSRP** (PowerShell Remoting Protocol), which uses the same
+WinRM transport ports (5985/5986) but offers lower per-task overhead through
+connection reuse and pipelining.
 
 Run the following PowerShell script as Administrator on each target server:
 
 ```powershell
-# Configure WinRM with HTTPS (recommended for production)
-winrm quickconfig -q
-winrm set winrm/config/service/auth '@{Basic="false"; Kerberos="true"; Negotiate="true"}'
+# Enable PowerShell Remoting (required for PSRP)
+Enable-PSRemoting -Force -SkipNetworkProfileCheck
 
-# Create a self-signed certificate for WinRM HTTPS (for test environments)
+# Create a self-signed certificate for HTTPS (for non-production environments)
 $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My
 New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
 
@@ -54,7 +57,9 @@ Start-Service WinRM
 Set-Service WinRM -StartupType Automatic
 ```
 
-> **Production recommendation:** Use a CA-signed certificate and Kerberos or CredSSP authentication.
+> **Production recommendation:** Use a CA-signed certificate and NTLM or Kerberos
+> authentication. Set `ansible_psrp_cert_validation: validate` in the production
+> group_vars.
 
 ## Installation
 
@@ -132,11 +137,15 @@ iis-ansible/
 ├── ansible.cfg                          # Ansible configuration
 ├── requirements.txt                     # Python dependencies
 ├── requirements.yml                     # Ansible collection dependencies
+├── ci/
+│   └── inventory/                       # CI-specific inventory (GitHub Actions)
+│       ├── hosts.yml
+│       └── group_vars/all.yml           # CI overrides (C-drive, .NET 8 only, iana_timezone)
 ├── inventory/
 │   ├── hosts.yml                        # OTAP inventory
 │   └── group_vars/
 │       ├── all/main.yml                 # Global variables
-│       ├── windows/main.yml             # WinRM connection settings
+│       ├── windows/main.yml             # PSRP connection settings
 │       ├── otap_o/main.yml              # Development-specific variables
 │       ├── otap_t/main.yml              # Test-specific variables
 │       ├── otap_a/main.yml              # Acceptance-specific variables
@@ -153,7 +162,7 @@ iis-ansible/
             ├── main.yml                 # Task orchestration
             ├── os_requirements.yml      # OS preparation
             ├── iis_features.yml         # IIS feature installation
-            ├── iis_configure.yml        # IIS configuration (D-drive)
+            ├── iis_configure.yml        # IIS configuration and firewall verification
             ├── iis_rewrite.yml          # URL Rewrite module
             └── _dotnet_version_install.yml  # .NET runtime helper (single version)
 ```
@@ -168,7 +177,26 @@ iis-ansible/
 
 ## Maintenance
 
-Download URLs for .NET and the URL Rewrite Module are configured as variables in `roles/iis/defaults/main.yml` (`iis_dotnet_versions`) and `roles/iis/vars/main.yml`.
-Update these variables when a new patch level becomes available.
+**.NET download URLs and checksums** are fetched automatically at runtime from the
+[Microsoft .NET Releases API](https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json).
+No manual updates are needed when a new patch release is published. Only the
+`dotnet_channel_version` entries in `roles/iis/defaults/main.yml` need updating
+when a new major version is added or a version reaches end-of-life.
 
-Check supported versions at: https://dotnet.microsoft.com/en-us/platform/support/policy
+**URL Rewrite Module** URL is hardcoded in `roles/iis/defaults/main.yml`; the
+product has been frozen since 2018 and the URL is stable.
+
+Check supported .NET versions at: https://dotnet.microsoft.com/en-us/platform/support/policy
+
+## CI/CD
+
+A GitHub Actions pipeline runs on every push:
+
+| Job | Runner | Trigger |
+|---|---|---|
+| Lint (`ansible-lint`) | ubuntu-latest | every push |
+| Syntax check | ubuntu-latest | every push |
+| Integration test + idempotency | windows-2022 | after lint + syntax |
+
+The integration job installs IIS on the runner itself using WSL as the Ansible
+control node, then verifies IIS is listening and serving requests.

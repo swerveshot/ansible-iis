@@ -23,7 +23,10 @@ beheren via Claude Code.
 - `microsoft.iis` voor website en app pool beheer — **niet** `community.windows`
   win_iis_* modules, die zijn deprecated en worden verwijderd in v4.0
 - `ansible.windows` voor algemene Windows taken
-- `community.windows` voor firewall en win_dotnet_ngen
+- `community.windows` voor win_dotnet_ngen (firewall wordt afgehandeld via
+  verificatie van de standaard IIS-firewallregels in `iis_configure.yml`)
+- `ansible.posix` voor `timer` en `profile_tasks` callback plugins
+  (`callbacks_enabled = ansible.posix.timer, ansible.posix.profile_tasks` in `ansible.cfg`)
 
 ### Installatiebron: `iis_package_source`
 
@@ -258,8 +261,9 @@ ansible_pipelining: true              # nieuw — niet beschikbaar bij winrm
 **CI-vereiste:** `Enable-PSRemoting -Force -SkipNetworkProfileCheck` staat vóór
 `winrm quickconfig` in de workflow — PSRP heeft PowerShell Remoting endpoints nodig.
 
-**Python dependency:** `pypsrp[ntlm]>=0.7.0` (vervangt `pywinrm` + `requests-ntlm`
-+ `xmltodict` in requirements.txt).
+**Python dependency:** `pypsrp>=0.7.0` (vervangt `pywinrm` + `requests-ntlm`
++ `xmltodict` in requirements.txt). De `[ntlm]` extra wordt weggelaten: pypsrp 0.9.x
+declareert hem niet meer, en basic auth over HTTP heeft NTLM niet nodig.
 
 ### PowerShell ngen-optimalisatie
 
@@ -286,6 +290,9 @@ via ngen (native image generator). Dit versnelt de PowerShell-opstarttijd met
 - Handlers worden alleen bij naam genotificeerd, nooit door module-uitkomst
 - Gebruik geen deprecated modules of kale variabele-syntax (`{{ var }}` zonder aanhalingstekens als enige waarde van een YAML-sleutel)
 - Inventory bestanden altijd in YAML-formaat (`.yml`), nooit INI
+- `callbacks_enabled` in `ansible.cfg` gebruikt FQCN: `ansible.posix.timer, ansible.posix.profile_tasks`
+- `ansible_managed` staat **niet** in `ansible.cfg` (deprecated via `DEFAULT_MANAGED_STR`),
+  maar in `inventory/group_vars/all/main.yml`
 
 ## OTAP-structuur
 ```
@@ -367,9 +374,22 @@ ansible-lint --nocolor
 
 ### Hoe de integration job werkt
 De Windows runner configureert WinRM + PSRemoting op zichzelf (`127.0.0.1:5985`,
-HTTP basic, tijdelijke lokale admin). Ansible draait via Python op dezelfde machine
-en verbindt terug via PSRP. Na de eerste run volgt een idempotency check (tweede
-run moet `changed=0` rapporteren).
+HTTP basic, tijdelijke lokale admin). Ansible draait vanuit WSL (Ubuntu 22.04) op
+dezelfde machine en verbindt terug via PSRP. Na de eerste run volgt een idempotency
+check (tweede run moet `changed=0` rapporteren).
+
+**WSL-configuratie vóór de eerste wsl-bash stap (PowerShell):**
+- DrvFs metadata: via `wsl --exec sh -c "printf ... > /etc/wsl.conf"` gevolgd door
+  `wsl --shutdown`. Zonder `metadata` zien bestanden op NTFS-mounts er `0777` uit
+  en negeert Ansible de `ansible.cfg`.
+- Tijdzone: `iana_timezone` uit `ci/inventory/group_vars/all.yml` wordt via
+  `Select-String` uitgelezen, als `TZ=…` naar `$GITHUB_ENV` geschreven en via
+  `WSLENV` doorgegeven aan alle wsl-bash stappen. Dit zorgt voor lokale timestamps
+  in de `profile_tasks` en `timer` callbacks.
+
+**Overige CI-instellingen:**
+- `ANSIBLE_CACHE_PLUGIN=memory` per playbook-run (omgevingsvariabele): voorkomt
+  waarschuwingen van de jsonfile-cache bij het verplaatsen van bestanden op DrvFs.
 
 ### CI-specifieke overrides (`ci/inventory/`)
 | Override | CI-waarde | Reden |
@@ -378,6 +398,7 @@ run moet `changed=0` rapporteren).
 | Alle `iis_*_path` | `C:\IIS\...` | Volgt uit bovenstaande |
 | `iis_dotnet_enabled_versions` | `["8"]` | Kortere pipeline runtime |
 | `iis_package_source` | `url` | CI heeft geen toegang tot interne shares |
+| `iana_timezone` | `Europe/Amsterdam` | Tijdzone control node (WSL); alleen CI-variabele |
 
 ### GitHub Actions loganalyse
 
