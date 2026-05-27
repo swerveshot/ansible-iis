@@ -1,77 +1,76 @@
-# CLAUDE.md - Projectgeheugen voor Claude Code
-<!-- Dit bestand wordt automatisch ingeladen bij elke Claude Code sessie. -->
+# CLAUDE.md - Project memory for Claude Code
+<!-- This file is automatically loaded at the start of every Claude Code session. -->
 
-## Wat is dit project?
-Ansible project voor geautomatiseerde installatie en configuratie van IIS op
-Windows Server 2022, inclusief .NET runtimes en URL Rewrite Module.
-Ontwikkeld in samenwerking met Claude (claude.ai) als startpunt, verder te
-beheren via Claude Code.
+## What is this project?
+Ansible project for automated installation and configuration of IIS on
+Windows Server 2022, including .NET runtimes and the URL Rewrite Module.
+Started in collaboration with Claude (claude.ai), maintained going forward
+via Claude Code.
 
-## Taal en communicatie
-- Schrijf comments, variabelenamen en documentatie in het **Engels**
-- Communiceer met de gebruiker in het **Nederlands**
-- Voeg **geen** Claude-verwijzingen toe aan commit messages (geen Co-Authored-By of andere AI-attributie)
+## Language and communication
+- Write comments, variable names, documentation, and this CLAUDE.md file in **English**
+- Communicate with the user in **Dutch**
+- Do **not** add Claude references to commit messages (no Co-Authored-By or other AI attribution)
 
-## Architectuurkeuzes (niet zomaar wijzigen)
+## Architectural decisions (do not change without good reason)
 
-### Schijfindeling
-- OS staat op `C:\` — daar komt niets van IIS bij
-- Alle IIS data op `D:\`: wwwroot, logs, temp, compressie, backups
-- Tijdelijke installatiebestanden op `C:\Temp\ansible_downloads` (worden opgeruimd)
+### Disk layout
+- OS lives on `C:\` — no IIS data goes there
+- All IIS data on `D:\`: wwwroot, logs, temp, compression, backups
+- Temporary installer files on `C:\Temp\ansible_downloads` (cleaned up after use)
 
 ### Collections
-- `microsoft.iis` voor website en app pool beheer — **niet** `community.windows`
-  win_iis_* modules, die zijn deprecated en worden verwijderd in v4.0
-- `ansible.windows` voor algemene Windows taken
-- `community.windows` voor win_dotnet_ngen (firewall wordt afgehandeld via
-  verificatie van de standaard IIS-firewallregels in `iis_configure.yml`)
-- `ansible.posix` voor `timer` en `profile_tasks` callback plugins
+- `microsoft.iis` for website and app pool management — **not** `community.windows`
+  win_iis_* modules, which are deprecated and will be removed in v4.0
+- `ansible.windows` for general Windows tasks
+- `community.windows` for win_dotnet_ngen (firewall is handled by verifying
+  the default IIS firewall rules in `iis_configure.yml`)
+- `ansible.posix` for the `timer` and `profile_tasks` callback plugins
   (`callbacks_enabled = ansible.posix.timer, ansible.posix.profile_tasks` in `ansible.cfg`)
 
-### Installatiebron: `iis_package_source`
+### Package source: `iis_package_source`
 
-De rol ondersteunt twee bronstrategieën voor het ophalen van installatiebestanden.
-De keuze wordt bepaald door de variabele `iis_package_source` in `defaults/main.yml`:
+The role supports two strategies for fetching installer files.
+The choice is controlled by `iis_package_source` in `defaults/main.yml`:
 
 ```yaml
-iis_package_source: url    # Default: direct downloaden via Microsoft CDN
-iis_package_source: share  # Kopiëren vanaf een interne netwerkshare
+iis_package_source: url    # Default: download directly from Microsoft CDN
+iis_package_source: share  # Copy from an internal UNC share
 ```
 
-**Waarom twee strategieën?**
+**Why two strategies?**
 
-| Situatie | Strategie | Reden |
+| Situation | Strategy | Reason |
 |---|---|---|
-| GitHub Actions CI | `url` | Runner heeft geen toegang tot interne shares |
-| Productie / OTAP | `share` | Servers zonder internettoegang; beheersbaar distributieproces |
+| GitHub Actions CI | `url` | Runner has no access to internal shares |
+| Production / OTAP | `share` | Servers without internet access; controlled distribution process |
 
-**Taakvolgorde — identiek na de bronkeuze:**
+**Task order — identical after the source choice:**
 
 ```
-[url]   → win_get_url (Microsoft CDN) → temp → verificatie → installeren → opruimen
-[share] → win_copy (UNC-pad)          → temp →              installeren → opruimen
+[url]   → win_get_url (Microsoft CDN) → temp → verification → install → cleanup
+[share] → win_copy (UNC path)         → temp →               install → cleanup
 ```
 
-De installatie- en opruimtaken zijn **identiek** voor beide strategieën. Alleen
-de kopieer-stap verschilt. Implementeer dit met `when: iis_package_source == 'url'`
-en `when: iis_package_source == 'share'` op de respectievelijke kopieer-taken,
-**niet** door aparte taakbestanden per strategie.
+The install and cleanup tasks are **identical** for both strategies. Only
+the copy step differs. Implement this with `when: iis_package_source == 'url'`
+and `when: iis_package_source == 'share'` on the respective copy tasks,
+**not** by creating separate task files per strategy.
 
-**Verificatie per strategie:**
-- `url`: checksum-verificatie via `win_get_url` (SHA512 voor .NET, Authenticode voor URL Rewrite)
-- `share`: geen extra verificatie — de organisatie is verantwoordelijk voor de integriteit
-  van bestanden op de interne share
+**Verification per strategy:**
+- `url`: checksum verification via `win_get_url` (SHA512 for .NET, Authenticode for URL Rewrite)
+- `share`: no additional verification — the organisation is responsible for the integrity
+  of files on the internal share
 
-**Share-configuratie hoort in `group_vars`, nooit in de rol:**
+**Share configuration belongs in `group_vars`, never in the role:**
 ```yaml
 # inventory/group_vars/windows/main.yml
 iis_package_share: '\\fileserver\software\iis'
 ```
 
-De variabele `iis_package_share` heeft geen default in `defaults/main.yml` en
-wordt alleen gebruikt wanneer `iis_package_source: share`. Claude Code moet een
-duidelijke foutmelding genereren als `iis_package_source: share` is ingesteld
-maar `iis_package_share` niet gedefinieerd is:
+`iis_package_share` has no default in `defaults/main.yml` and is only used
+when `iis_package_source: share`. Claude Code must generate a clear error
+if `iis_package_source: share` is set but `iis_package_share` is not defined:
 
 ```yaml
 - name: Verify share path is defined when source is share
@@ -81,64 +80,64 @@ maar `iis_package_share` niet gedefinieerd is:
   when: iis_package_source == 'share'
 ```
 
-**CI-override in `ci/inventory/`:**
+**CI override in `ci/inventory/`:**
 ```yaml
-iis_package_source: url  # Expliciete override — CI gebruikt altijd directe download
+iis_package_source: url  # Explicit override — CI always downloads directly
 ```
 
-### .NET installatiestrategie
-- Hosting Bundle per versie (installeert x64 én x86 runtime + ASP.NET + IIS module)
-- Losse x86 runtime optioneel naast de bundle (`iis_dotnet_install_individual_x86`)
-- Versies gedefinieerd als lijst in `defaults/main.yml` → `iis_dotnet_versions`
-- Welke versies actief zijn per omgeving: `iis_dotnet_enabled_versions` in group_vars
+### .NET installation strategy
+- Hosting Bundle per version (installs x64 and x86 runtime + ASP.NET + IIS module)
+- Separate x86 runtime optionally alongside the bundle (`iis_dotnet_install_individual_x86`)
+- Versions defined as a list in `defaults/main.yml` → `iis_dotnet_versions`
+- Which versions are active per environment: `iis_dotnet_enabled_versions` in group_vars
 
-#### Download-URL's en checksums via de Microsoft .NET Releases API
+#### Download URLs and checksums via the Microsoft .NET Releases API
 
-Download-URL's en SHA512-checksums worden **niet** hardgecodeerd. Microsoft
-publiceert een volledig machine-leesbare JSON API die bij elke Patch Tuesday
-wordt bijgewerkt. De rol haalt URL en checksum dynamisch op via twee lagen.
+Download URLs and SHA512 checksums are **not** hardcoded. Microsoft publishes
+a fully machine-readable JSON API that is updated on every Patch Tuesday.
+The role fetches the URL and checksum dynamically via two layers.
 
-**Laag 1 — Release-index (alle kanalen):**
+**Layer 1 — Release index (all channels):**
 ```
 https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json
 ```
 
-Sleutelvelden per kanaal-entry:
+Key fields per channel entry:
 
-| Veld | Beschrijving |
+| Field | Description |
 |---|---|
-| `channel-version` | Versiestring, bv. `"8.0"` |
-| `support-phase` | `"active"`, `"maintenance"` of `"eol"` |
-| `release-type` | `"lts"` of `"sts"` |
-| `eol-date` | Einddatum ondersteuning (ISO 8601) |
-| `releases.json` | URL naar Laag 2 |
+| `channel-version` | Version string, e.g. `"8.0"` |
+| `support-phase` | `"active"`, `"maintenance"` or `"eol"` |
+| `release-type` | `"lts"` or `"sts"` |
+| `eol-date` | End-of-support date (ISO 8601) |
+| `releases.json` | URL to Layer 2 |
 
-**Laag 2 — Per-kanaal releases.json:**
-Volg de `releases.json`-URL uit Laag 1. Bevat een `releases`-array met per
-patch-release sub-objecten voor `runtime`, `aspnetcore-runtime` en `sdk`.
-Elk sub-object heeft een `files`-array met:
+**Layer 2 — Per-channel releases.json:**
+Follow the `releases.json` URL from Layer 1. Contains a `releases` array with
+per-patch-release sub-objects for `runtime`, `aspnetcore-runtime` and `sdk`.
+Each sub-object has a `files` array with:
 
-| Veld | Beschrijving |
+| Field | Description |
 |---|---|
-| `name` | Bestandsnaam, bv. `dotnet-hosting-win.exe` |
-| `rid` | Runtime identifier, bv. `win`, `win-x64` |
-| `url` | Directe download-URL |
-| `hash` | SHA512-checksum (hex) |
+| `name` | Filename, e.g. `dotnet-hosting-win.exe` |
+| `rid` | Runtime identifier, e.g. `win`, `win-x64` |
+| `url` | Direct download URL |
+| `hash` | SHA512 checksum (hex) |
 
-**Componentmapping:**
+**Component mapping:**
 
-| Component | Bestandsnaam | Sub-object in releases.json |
+| Component | Filename | Sub-object in releases.json |
 |---|---|---|
 | Hosting Bundle | `dotnet-hosting-win.exe` | `aspnetcore-runtime.files` |
 | ASP.NET Core Runtime | `aspnetcore-runtime-win-x64.exe` | `aspnetcore-runtime.files` |
 | .NET Runtime x64 | `dotnet-runtime-win-x64.exe` | `runtime.files` |
 | .NET Runtime x86 | `dotnet-runtime-win-x86.exe` | `runtime.files` |
 
-De Hosting Bundle is een superset: hij installeert de .NET Runtime, ASP.NET Core
-Runtime én de IIS-integratiemodule (ANCM). Losse componenten zijn doorgaans
-niet nodig.
+The Hosting Bundle is a superset: it installs the .NET Runtime, ASP.NET Core
+Runtime and the IIS integration module (ANCM). Separate components are
+generally not needed.
 
-**Ansible-implementatiepatroon:**
+**Ansible implementation pattern:**
 ```yaml
 - name: Fetch .NET release index
   ansible.builtin.uri:
@@ -175,40 +174,40 @@ niet nodig.
           first).hash }}
 ```
 
-`delegate_to: localhost` met `run_once: true` houdt de HTTP-aanroepen op de
-control node en voorkomt onnodige requests bij meerdere Windows-targets.
+`delegate_to: localhost` with `run_once: true` keeps the HTTP calls on the
+control node and avoids redundant requests when targeting multiple Windows hosts.
 
-De enige versiegerelateerde variabele die de aanroeper instelt is:
+The only version-related variable the caller sets is:
 ```yaml
-dotnet_channel_version: "8.0"  # Of "9.0", "10.0", etc.
+dotnet_channel_version: "8.0"  # Or "9.0", "10.0", etc.
 ```
 
-**Uitzondering — specifieke patch-versie pinnen:**
-Wil een gebruiker de rol forken en een vaste patch-versie gebruiken, dan kan
-`url` en `hash` per versie worden overschreven in `defaults/main.yml`. Dit is
-bewust de uitzondering, niet de norm.
+**Exception — pinning a specific patch version:**
+If a user forks the role and wants a fixed patch version, `url` and `hash`
+can be overridden per version entry in `defaults/main.yml`. This is
+intentionally the exception, not the norm.
 
-### URL Rewrite Module: geen JSON API, wel Authenticode-verificatie
+### URL Rewrite Module: no JSON API, but Authenticode verification
 
-De IIS URL Rewrite Module 2.1 heeft — anders dan .NET — **geen** machine-leesbare
-metadata-API en Microsoft publiceert geen officiële checksums voor de installer.
-De download-URL is al jaren stabiel en ongewijzigd (bevroren product, laatste
-DLL-update september 2018):
+The IIS URL Rewrite Module 2.1 — unlike .NET — has **no** machine-readable
+metadata API and Microsoft publishes no official checksums for the installer.
+The download URL has been stable and unchanged for years (frozen product,
+last DLL update September 2018):
 
 ```
-# x64 (gebruik deze)
+# x64 (use this)
 https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi
 
-# x86 (alleen indien expliciet vereist)
+# x86 (only if explicitly required)
 https://download.microsoft.com/download/D/8/1/D81E5DD6-1ABB-46B0-9B4B-21894E18B77F/rewrite_x86_en-US.msi
 ```
 
-Deze URL's mogen wél worden hardgecodeerd in `defaults/main.yml` — er is geen
-alternatief en ze wijzigen niet.
+These URLs may be hardcoded in `defaults/main.yml` — there is no alternative
+and they do not change.
 
-**Verificatie bij `iis_package_source: url`:**
-Gebruik Authenticode-handtekeningverificatie via PowerShell na het downloaden.
-Dit is robuuster dan een handmatig bijgehouden hash:
+**Verification when `iis_package_source: url`:**
+Use Authenticode signature verification via PowerShell after downloading.
+This is more robust than a manually maintained hash:
 
 ```yaml
 - name: Verify Authenticode signature of URL Rewrite installer
@@ -226,141 +225,140 @@ Dit is robuuster dan een handmatig bijgehouden hash:
   when: iis_package_source == 'url'
 ```
 
-**Verificatie bij `iis_package_source: share`:** geen — de organisatie
-is verantwoordelijk voor de integriteit van bestanden op de interne share.
+**Verification when `iis_package_source: share`:** none — the organisation
+is responsible for the integrity of files on the internal share.
 
-### DRY-principe
-- `_dotnet_version_install.yml` is een generiek helper-taakbestand (underscore = niet
-  standalone). Wordt 3× aangeroepen vanuit `tasks/main.yml` via `include_tasks`
-- **Waarom geen loop?** `include_tasks` met een loop breekt per-versie tags
-  (`--tags dotnet_8`). Drie aparte includes met eigen tags is de enige correcte oplossing.
-- Drie gerelateerde log-instellingen zitten in één PowerShell-aanroep in `iis_configure.yml`
+### DRY principle
+- `_dotnet_version_install.yml` is a generic helper task file (underscore = not
+  standalone). Called 3× from `tasks/main.yml` via `include_tasks`.
+- **Why no loop?** `include_tasks` with a loop breaks per-version tags
+  (`--tags dotnet_8`). Three separate includes with their own tags is the only correct solution.
+- Three related log settings are combined in a single PowerShell call in `iis_configure.yml`.
 
-### Verbinding: PSRP in plaats van WinRM
+### Connection: PSRP instead of WinRM
 
-Ansible verbindt met Windows via `ansible_connection: psrp` (PyPSRP library).
-PSRP is gekozen boven `winrm` (PyWinRM) vanwege:
+Ansible connects to Windows via `ansible_connection: psrp` (PyPSRP library).
+PSRP is chosen over `winrm` (PyWinRM) because:
 
-| Eigenschap | PSRP | WinRM |
+| Property | PSRP | WinRM |
 |---|---|---|
-| Pipelining | ✓ Ja | ✗ Nee |
-| Per-taak overhead | Laag (hergebruikt verbinding) | Hoog (nieuwe verbinding per taak) |
-| Authenticatie | basic, ntlm, kerberos, negotiate | idem |
-| Transport | zelfde HTTP/HTTPS poorten (5985/5986) | idem |
+| Pipelining | ✓ Yes | ✗ No |
+| Per-task overhead | Low (reuses connection) | High (new connection per task) |
+| Authentication | basic, ntlm, kerberos, negotiate | same |
+| Transport | same HTTP/HTTPS ports (5985/5986) | same |
 
-**Variabelenamen (PSRP):**
+**Variable names (PSRP):**
 ```yaml
-ansible_psrp_auth: ntlm               # i.p.v. ansible_winrm_transport
-ansible_psrp_protocol: https          # i.p.v. ansible_winrm_scheme
-ansible_psrp_cert_validation: ignore  # i.p.v. ansible_winrm_server_cert_validation
-ansible_psrp_connection_timeout: 120  # i.p.v. ansible_winrm_operation_timeout_sec
-ansible_psrp_read_timeout: 130        # i.p.v. ansible_winrm_read_timeout_sec
-ansible_pipelining: true              # nieuw — niet beschikbaar bij winrm
+ansible_psrp_auth: ntlm               # instead of ansible_winrm_transport
+ansible_psrp_protocol: https          # instead of ansible_winrm_scheme
+ansible_psrp_cert_validation: ignore  # instead of ansible_winrm_server_cert_validation
+ansible_psrp_connection_timeout: 120  # instead of ansible_winrm_operation_timeout_sec
+ansible_psrp_read_timeout: 130        # instead of ansible_winrm_read_timeout_sec
+ansible_pipelining: true              # new — not available with winrm
 ```
 
-**CI-vereiste:** `Enable-PSRemoting -Force -SkipNetworkProfileCheck` staat vóór
-`winrm quickconfig` in de workflow — PSRP heeft PowerShell Remoting endpoints nodig.
+**CI requirement:** `Enable-PSRemoting -Force -SkipNetworkProfileCheck` runs before
+`winrm quickconfig` in the workflow — PSRP requires PowerShell Remoting endpoints.
 
-**Python dependency:** `pypsrp>=0.7.0` (vervangt `pywinrm` + `requests-ntlm`
-+ `xmltodict` in requirements.txt). De `[ntlm]` extra wordt weggelaten: pypsrp 0.9.x
-declareert hem niet meer, en basic auth over HTTP heeft NTLM niet nodig.
+**Python dependency:** `pypsrp>=0.7.0` (replaces `pywinrm` + `requests-ntlm`
++ `xmltodict` in requirements.txt). The `[ntlm]` extra is omitted: pypsrp 0.9.x
+no longer declares it, and basic auth over HTTP does not require NTLM.
 
-### PowerShell ngen-optimalisatie
+### PowerShell ngen optimisation
 
-`os_requirements.yml` bevat een taak die PowerShell assemblies pre-compileert
-via ngen (native image generator). Dit versnelt de PowerShell-opstarttijd met
-~10× en vermindert overhead bij elke Ansible module-aanroep.
+`os_requirements.yml` contains a task that pre-compiles PowerShell assemblies
+via ngen (native image generator). This speeds up PowerShell startup by ~10×
+and reduces overhead on every Ansible module call.
 
-- Bron: [Ansible Windows performance guide](https://docs.ansible.com/projects/ansible/latest/os_guide/windows_performance.html)
-- Locatie: eerste `pre_task` in `playbooks/site.yml` — draait vóór alle role-taken
-- Idempotent: heruitvoering wanneer native images al bestaan is veilig en snel
-- Tag: `ps_optimize` (alleen met `--tags ps_optimize` of als onderdeel van een volledige run)
-- Rapporteert altijd `changed: false` — het is optimalisatie, geen configuratie
+- Source: [Ansible Windows performance guide](https://docs.ansible.com/projects/ansible/latest/os_guide/windows_performance.html)
+- Location: first `pre_task` in `playbooks/site.yml` — runs before all role tasks
+- Idempotent: re-running when native images already exist is safe and fast
+- Tag: `ps_optimize` (only with `--tags ps_optimize` or as part of a full run)
+- Always reports `changed: false` — it is optimisation, not configuration
 
-### Beveiliging
-- Geen credentials of gebruikersnamen in de rol of in git
-- `ansible_user` en `ansible_password` komen altijd uit `vault.yml` (staat in .gitignore)
-- `vault.yml.example` toont het formaat zonder echte waarden — wél in git
-- `vars/main.yml` bevat alleen publieke Microsoft-constanten (URLs, registry-paden)
-- `defaults/main.yml` bevat configureerbare standaardwaarden — geen secrets
+### Security
+- No credentials or usernames in the role or in git
+- `ansible_user` and `ansible_password` always come from `vault.yml` (in .gitignore)
+- `vault.yml.example` shows the format without real values — is committed to git
+- `vars/main.yml` contains only public Microsoft constants (URLs, registry paths)
+- `defaults/main.yml` contains configurable default values — no secrets
 
-### Ansible Lint en codekwaliteit
-- Gebruik altijd Fully Qualified Collection Names (FQCN), bv. `ansible.windows.win_get_url`
-- Elke taak heeft een `name` met een betekenisvolle omschrijving (sentence case)
-- Handlers worden alleen bij naam genotificeerd, nooit door module-uitkomst
-- Gebruik geen deprecated modules of kale variabele-syntax (`{{ var }}` zonder aanhalingstekens als enige waarde van een YAML-sleutel)
-- Inventory bestanden altijd in YAML-formaat (`.yml`), nooit INI
-- `callbacks_enabled` in `ansible.cfg` gebruikt FQCN: `ansible.posix.timer, ansible.posix.profile_tasks`
-- `ansible_managed` staat **niet** in `ansible.cfg` (deprecated via `DEFAULT_MANAGED_STR`),
-  maar in `inventory/group_vars/all/main.yml`
+### Ansible Lint and code quality
+- Always use Fully Qualified Collection Names (FQCN), e.g. `ansible.windows.win_get_url`
+- Every task has a `name` with a meaningful description (sentence case)
+- Handlers are notified by name only, never by module outcome
+- Do not use deprecated modules or bare variable syntax (`{{ var }}` without quotes as the sole value of a YAML key)
+- Inventory files always in YAML format (`.yml`), never INI
+- `callbacks_enabled` in `ansible.cfg` uses FQCN: `ansible.posix.timer, ansible.posix.profile_tasks`
+- `ansible_managed` is **not** in `ansible.cfg` (deprecated via `DEFAULT_MANAGED_STR`);
+  it lives in `inventory/group_vars/all/main.yml`
 
-## OTAP-structuur
+## OTAP structure
 ```
-all → windows → otap_o (Ontwikkeling)
+all → windows → otap_o (Development)
                 otap_t (Test)
-                otap_a (Acceptatie)
-                otap_p (Productie)
+                otap_a (Acceptance)
+                otap_p (Production)
 ```
-- Productie: `ansible_psrp_cert_validation: validate` (CA-certificaat)
-- Overig:    `ignore` (zelfondertekend certificaat toegestaan)
-- HTTP toegestaan in O en T, alleen HTTPS in A en P
+- Production: `ansible_psrp_cert_validation: validate` (CA certificate)
+- Other:      `ignore` (self-signed certificate permitted)
+- HTTP permitted in Development and Test; HTTPS only in Acceptance and Production
 
-## .NET versie lifecycle (bijwerken indien gewijzigd)
-| Versie | Type | EOL        | Actie |
-|--------|------|------------|-------|
-| 8      | LTS  | 2026-11-10 | Prima |
-| 9      | STS  | 2026-11-10 | Plan migratie naar 10 |
-| 10     | LTS  | 2028-11-14 | Aanbevolen |
+## .NET version lifecycle (update when changed)
+| Version | Type | EOL        | Action |
+|---------|------|------------|--------|
+| 8       | LTS  | 2026-11-10 | Fine |
+| 9       | STS  | 2026-11-10 | Plan migration to 10 |
+| 10      | LTS  | 2028-11-14 | Recommended |
 
-## Beschikbare tags
-| Tag                   | Wat het doet |
+## Available tags
+| Tag                   | What it does |
 |-----------------------|--------------|
-| `os_requirements`     | Tijdzone, mapstructuur, TLS, firewall, pagefile |
-| `ps_optimize`         | PowerShell ngen-optimalisatie (pre_task in site.yml, niet in de rol) |
-| `iis_features`        | Windows features installeren |
-| `iis_configure`       | IIS paden, logging, app pools, beveiliging |
+| `os_requirements`     | Timezone, directory structure, TLS, firewall, pagefile |
+| `ps_optimize`         | PowerShell ngen optimisation (pre_task in site.yml, not in the role) |
+| `iis_features`        | Install Windows features |
+| `iis_configure`       | IIS paths, logging, app pools, security |
 | `iis_rewrite`         | URL Rewrite Module 2.1 |
-| `dotnet`              | Alle .NET versies |
-| `dotnet_8`            | Alleen .NET 8 |
-| `dotnet_9`            | Alleen .NET 9 |
-| `dotnet_10`           | Alleen .NET 10 |
-| `dotnet_ngen`         | .NET ngen hercompilatie (overgeslagen in CI) |
-| `dotnet_cleanup`      | Tijdelijke installatiebestanden verwijderen |
-| `iis_rewrite_example` | Voorbeeld HTTPS redirect regel |
+| `dotnet`              | All .NET versions |
+| `dotnet_8`            | .NET 8 only |
+| `dotnet_9`            | .NET 9 only |
+| `dotnet_10`           | .NET 10 only |
+| `dotnet_ngen`         | .NET ngen recompilation (skipped in CI) |
+| `dotnet_cleanup`      | Remove temporary installer files |
+| `iis_rewrite_example` | Example HTTPS redirect rule |
 
-## Veelgestelde aanpassingen
+## Common customisations
 
-### Nieuwe .NET versie toevoegen
-1. Voeg een item toe aan `iis_dotnet_versions` in `defaults/main.yml`
-2. Voeg een `include_tasks`-blok toe in `tasks/main.yml` met de juiste tag
-3. Voeg de major versie toe aan `iis_dotnet_enabled_versions` in de gewenste group_vars
+### Adding a new .NET version
+1. Add an entry to `iis_dotnet_versions` in `defaults/main.yml`
+2. Add an `include_tasks` block to `tasks/main.yml` with the appropriate tag
+3. Add the major version to `iis_dotnet_enabled_versions` in the relevant group_vars
 
-### Download-URL's en patch-versies bijwerken
-De rol haalt URL en checksum automatisch op via de Microsoft .NET Releases API
-(zie hierboven). Handmatig bijwerken is **niet nodig**. Controleer alleen of
-`dotnet_channel_version` per versie-entry in `defaults/main.yml` nog klopt
-met de gewenste lifecycle-fase.
+### Updating download URLs and patch versions
+The role fetches the URL and checksum automatically via the Microsoft .NET Releases API
+(see above). Manual updates are **not needed**. Only verify that `dotnet_channel_version`
+per version entry in `defaults/main.yml` still matches the desired lifecycle phase.
 
-Wil je toch een specifieke patch-versie inzien, raadpleeg dan:
-- API (machine): `https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json`
+To inspect a specific patch version:
+- API (machine-readable): `https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json`
 - Browser: `https://dotnet.microsoft.com/download/dotnet`
 
-### Nieuwe omgeving toevoegen
-1. Voeg hosts toe in `inventory/hosts.yml` onder een nieuwe groep
-2. Maak `inventory/group_vars/<groepnaam>/main.yml` aan
-3. Maak `inventory/group_vars/<groepnaam>/vault.yml` aan (niet in git)
+### Adding a new environment
+1. Add hosts to `inventory/hosts.yml` under a new group
+2. Create `inventory/group_vars/<groupname>/main.yml`
+3. Create `inventory/group_vars/<groupname>/vault.yml` (not committed to git)
 
-## Lokale ontwikkelomgeving
+## Local development environment
 
 ### Python virtual environments
-Twee venvs beschikbaar onder `~/.virtualenvs/`:
+Two venvs available under `~/.virtualenvs/`:
 
-| Venv        | ansible-lint versie |
-|-------------|---------------------|
-| `ansible13` | 26.1.1 (nieuwst)    |
-| `ansible12` | 25.9.0              |
+| Venv        | ansible-lint version |
+|-------------|----------------------|
+| `ansible13` | 26.1.1 (latest)      |
+| `ansible12` | 25.9.0               |
 
-Activeren en ansible-lint uitvoeren:
+Activate and run ansible-lint:
 ```bash
 source ~/.virtualenvs/ansible13/bin/activate
 ansible-lint --nocolor
@@ -368,73 +366,73 @@ ansible-lint --nocolor
 
 ## CI/CD pipeline (GitHub Actions)
 
-### Architectuur
-- **lint + syntax** jobs: Ubuntu runner, draaien op elke push
-- **integration** job: `windows-2022` GitHub-hosted runner, draait na lint en syntax
-- Pushes die **alleen `.md`-bestanden** wijzigen triggeren de CI niet
-  (`paths-ignore: ["*.md", "**/*.md"]` — twee patronen omdat `**.md` in GitHub Actions
-  niet betrouwbaar root-level bestanden matcht)
+### Architecture
+- **lint + syntax** jobs: Ubuntu runner, triggered on every push
+- **integration** job: `windows-2022` GitHub-hosted runner, runs after lint and syntax
+- Pushes that change **only `.md` files** do not trigger CI
+  (`paths-ignore: ["*.md", "**/*.md"]` — two patterns because `**.md` does not
+  reliably match root-level files in GitHub Actions)
 
-### Hoe de integration job werkt
-De Windows runner configureert WinRM + PSRemoting op zichzelf (`127.0.0.1:5985`,
-HTTP basic, tijdelijke lokale admin). Ansible draait vanuit WSL (Ubuntu 22.04) op
-dezelfde machine en verbindt terug via PSRP. Na de eerste run volgt een idempotency
-check (tweede run moet `changed=0` rapporteren).
+### How the integration job works
+The Windows runner configures WinRM + PSRemoting on itself (`127.0.0.1:5985`,
+HTTP basic auth, temporary local admin). Ansible runs from WSL (Ubuntu 22.04) on
+the same machine and connects back via PSRP. After the first run an idempotency
+check follows (the second run must report `changed=0`).
 
-**WSL-configuratie vóór de eerste wsl-bash stap (PowerShell):**
-- DrvFs metadata: via `wsl --exec sh -c "printf ... > /etc/wsl.conf"` gevolgd door
-  `wsl --shutdown`. Zonder `metadata` zien bestanden op NTFS-mounts er `0777` uit
-  en negeert Ansible de `ansible.cfg`.
-- Tijdzone: `iana_timezone` uit `ci/inventory/group_vars/all.yml` wordt via
-  `Select-String` uitgelezen, als `TZ=…` naar `$GITHUB_ENV` geschreven en via
-  `WSLENV` doorgegeven aan alle wsl-bash stappen. Dit zorgt voor lokale timestamps
-  in de `profile_tasks` en `timer` callbacks.
+**WSL configuration before the first wsl-bash step (PowerShell):**
+- DrvFs metadata: via `wsl --exec sh -c "printf ... > /etc/wsl.conf"` followed by
+  `wsl --shutdown`. Without `metadata`, files on NTFS mounts appear as `0777` and
+  Ansible ignores `ansible.cfg`.
+- Timezone: `iana_timezone` from `ci/inventory/group_vars/all.yml` is read with
+  `Select-String`, written as `TZ=…` to `$GITHUB_ENV`, and forwarded to all
+  wsl-bash steps via `WSLENV`. This gives local timestamps in the `profile_tasks`
+  and `timer` callbacks.
 
-**Overige CI-instellingen:**
-- `ANSIBLE_CACHE_PLUGIN=memory` per playbook-run (omgevingsvariabele): voorkomt
-  waarschuwingen van de jsonfile-cache bij het verplaatsen van bestanden op DrvFs.
+**Other CI settings:**
+- `ANSIBLE_CACHE_PLUGIN=memory` per playbook run (environment variable): prevents
+  warnings from the jsonfile cache when moving files on DrvFs mounts.
 
-### CI-specifieke overrides (`ci/inventory/`)
-| Override | CI-waarde | Reden |
+### CI-specific overrides (`ci/inventory/`)
+| Override | CI value | Reason |
 |---|---|---|
-| `iis_data_drive` | `C:` | Windows runners hebben geen D:-schijf |
-| Alle `iis_*_path` | `C:\IIS\...` | Volgt uit bovenstaande |
-| `iis_dotnet_enabled_versions` | `["8"]` | Kortere pipeline runtime |
-| `iis_package_source` | `url` | CI heeft geen toegang tot interne shares |
-| `iana_timezone` | `Europe/Amsterdam` | Tijdzone control node (WSL); alleen CI-variabele |
+| `iis_data_drive` | `C:` | Windows runners have no D: drive |
+| All `iis_*_path` | `C:\IIS\...` | Follows from the above |
+| `iis_dotnet_enabled_versions` | `["8"]` | Shorter pipeline runtime |
+| `iis_package_source` | `url` | CI has no access to internal shares |
+| `iana_timezone` | `Europe/Amsterdam` | Control node timezone (WSL); CI-only variable |
 
-### GitHub Actions loganalyse
+### GitHub Actions log analysis
 
-Bij het onderzoeken van CI-fouten altijd het **volledige log** ophalen, niet alleen
-de staart. GitHub Actions comprimeert lange regels en `--log-failed` toont soms
-alleen de taakheader zonder resultaat als de stap meteen na die taak afbreekt.
+When investigating CI failures, always fetch the **full log**, not just the tail.
+GitHub Actions truncates long lines and `--log-failed` sometimes shows only the
+task header without the result when the step aborts immediately after that task.
 
 ```bash
-# Volledig log — gebruik dit als startpunt
+# Full log — use this as the starting point
 gh run view <run-id> --repo <owner>/<repo> --log 2>&1 | grep -E "TASK|fatal|FAILED|changed|ERROR" | head -100
 
-# Alleen gefaalde stap-output (handig bij grote runs)
+# Failed step output only (useful for large runs)
 gh run view <run-id> --repo <owner>/<repo> --log-failed 2>&1 | tail -100
 
-# Context rondom een specifieke taak
-gh run view <run-id> --repo <owner>/<repo> --log 2>&1 | grep -A 10 "naam van de taak"
+# Context around a specific task
+gh run view <run-id> --repo <owner>/<repo> --log 2>&1 | grep -A 10 "task name"
 ```
 
-Als een taakheader verschijnt maar er geen resultaat op volgt, en de stap daarna
-meteen begint met `Post Run`, dan is de Ansible-stap op dat punt afgebroken.
-Bekijk dan de volledige uitvoer van de stap (niet alleen de tail) om te zien of
-er een `fatal:` regel aan vooraf gaat.
+If a task header appears but no result follows, and the next step immediately
+starts with `Post Run`, the Ansible step aborted at that point. In that case
+view the full step output (not just the tail) to find whether a `fatal:` line
+precedes it.
 
-### Lokaal testen
+### Local testing
 ```bash
-# Lint en syntax (Linux/Mac)
+# Lint and syntax (Linux/Mac)
 source ~/.virtualenvs/ansible13/bin/activate
 ansible-lint --nocolor
 ansible-playbook playbooks/site.yml --syntax-check -i ci/inventory/hosts.yml
 ```
 
-## .gitignore — verplichte uitsluitingen
-Het `.gitignore` in de repository root moet minimaal bevatten:
+## .gitignore — required exclusions
+The `.gitignore` in the repository root must contain at minimum:
 
 ```gitignore
 # Ansible secrets
@@ -444,11 +442,11 @@ vault_pass.txt
 group_vars/*/vault.yml
 host_vars/*/vault.yml
 
-# Lokale inventory-overrides
+# Local inventory overrides
 inventory/local/
 inventory/*.local.yml
 
-# Editor en OS-ruis
+# Editor and OS noise
 .idea/
 .vscode/
 *.swp
@@ -461,12 +459,11 @@ __pycache__/
 *.pyc
 ```
 
-Gebruik `ansible-vault encrypt_string` voor secrets die per se in versiebeheer
-moeten leven. Commit nooit `ansible.cfg`-entries met wachtwoorden, tokens of
-interne hostnamen.
+Use `ansible-vault encrypt_string` for secrets that must live in version control.
+Never commit `ansible.cfg` entries containing passwords, tokens, or internal hostnames.
 
-## Wat nog niet gebouwd is (mogelijke uitbreidingen)
-- HTTPS binding configuratie (certificaat koppelen aan site)
-- Meerdere websites en app pools per server
-- Windows Updates automatisch installeren
-- Monitoring/alerting integratie
+## Not yet built (possible extensions)
+- HTTPS binding configuration (attaching a certificate to a site)
+- Multiple websites and app pools per server
+- Automated Windows Updates installation
+- Monitoring/alerting integration
