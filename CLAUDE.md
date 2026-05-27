@@ -229,7 +229,7 @@ This is more robust than a manually maintained hash:
 is responsible for the integrity of files on the internal share.
 
 ### DRY principle
-- `_dotnet_version_install.yml` is a generic helper task file (underscore = not
+- `dotnet_version_install.yml` is a generic helper task file (underscore = not
   standalone). Called 3× from `tasks/main.yml` via `include_tasks`.
 - **Why no loop?** `include_tasks` with a loop breaks per-version tags
   (`--tags dotnet_8`). Three separate includes with their own tags is the only correct solution.

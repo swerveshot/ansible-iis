@@ -3,7 +3,7 @@
 # roles/iis/tasks/main.yml - Task orchestration
 # =============================================================================
 # Imports the individual task files in the correct order.
-# Files with an underscore prefix (_) are helpers, not standalone.
+# dotnet_version_install.yml is a helper, not a standalone task file.
 #
 # Tags:
 #   os_requirements  - OS preparation
@@ -37,21 +37,21 @@
 # The when condition validates that the version is in iis_dotnet_enabled_versions.
 
 - name: ".NET 8 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '8') | first).support_type }} install"
-  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  ansible.builtin.include_tasks: dotnet_version_install.yml
   vars:
     dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '8') | first }}"
   when: "'8' in iis_dotnet_enabled_versions"
   tags: [dotnet, dotnet_8]
 
 - name: ".NET 9 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '9') | first).support_type }} install"
-  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  ansible.builtin.include_tasks: dotnet_version_install.yml
   vars:
     dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '9') | first }}"
   when: "'9' in iis_dotnet_enabled_versions"
   tags: [dotnet, dotnet_9]
 
 - name: ".NET 10 {{ (iis_dotnet_versions | selectattr('major', 'equalto', '10') | first).support_type }} install"
-  ansible.builtin.include_tasks: _dotnet_version_install.yml
+  ansible.builtin.include_tasks: dotnet_version_install.yml
   vars:
     dotnet_pkg: "{{ iis_dotnet_versions | selectattr('major', 'equalto', '10') | first }}"
   when: "'10' in iis_dotnet_enabled_versions"
