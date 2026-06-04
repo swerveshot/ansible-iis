@@ -210,17 +210,20 @@
       Import-Module WebAdministration -ErrorAction Stop
       $pspath = 'MACHINE/WEBROOT/APPHOST'
       $filter = 'system.webServer/security/requestFiltering/verbs'
-      # Note: [bool]$_.Value.allowed would be $true for the string "False" in PowerShell.
-      # Compare as string to correctly detect an existing deny entry.
-      $existing = Get-WebConfigurationProperty -pspath $pspath -filter $filter -name '.' |
-        Where-Object { $_.Value.verb -eq 'TRACE' -and [string]$_.Value.allowed -eq 'False' }
-      if (-not $existing) {
-        try {
-          Remove-WebConfigurationProperty -pspath $pspath -filter $filter `
-            -name '.' -AtElement @{verb='TRACE'} -ErrorAction SilentlyContinue
-        } catch {}
+      # Use Get-WebConfiguration (not Get-WebConfigurationProperty) so the full
+      # Collection object is returned with correct attribute types. This avoids
+      # the string/bool ambiguity of the ConfigurationElementCollectionProxy.
+      $verbs = Get-WebConfiguration -pspath $pspath -filter $filter
+      $traceBlocked = $false
+      if ($verbs -and $verbs.Collection) {
+        $traceBlocked = [bool]($verbs.Collection |
+          Where-Object { $_.verb -eq 'TRACE' -and $_.allowed -eq $false })
+      }
+      if (-not $traceBlocked) {
+        Remove-WebConfigurationProperty -pspath $pspath -filter $filter `
+          -name '.' -AtElement @{verb='TRACE'} -ErrorAction SilentlyContinue
         Add-WebConfigurationProperty -pspath $pspath -filter $filter `
-          -name '.' -value @{verb='TRACE'; allowed='false'}
+          -name '.' -value @{verb='TRACE'; allowed=$false}
         $Ansible.Changed = $true
       } else {
         $Ansible.Changed = $false
@@ -262,11 +265,11 @@
       $pspath   = 'MACHINE/WEBROOT/APPHOST'
       $filter   = 'system.applicationHost/sites/siteDefaults/logFile'
       $required = 113551
-      $raw = (Get-WebConfigurationProperty -pspath $pspath -filter $filter -name 'logExtFileFlags').Value
-      # null means schema default; use IIS default field set (Date+Time+ClientIP+UserName+
-      # Method+UriStem+UriQuery+HttpStatus+Win32Status = 68495) as the baseline.
-      # Convert via [long] first to handle flags-enum types safely.
-      $current = if ($null -eq $raw) { 68495 } else { [int][long]$raw }
+      # Use Get-WebConfiguration to read the effective value (never null, includes
+      # schema defaults). Get-WebConfigurationProperty can return null for properties
+      # that equal the schema default, causing idempotency failures.
+      $logFile = Get-WebConfiguration -pspath $pspath -filter $filter
+      $current = [int]$logFile.logExtFileFlags
       if (($current -band $required) -ne $required) {
         Set-WebConfigurationProperty -pspath $pspath -filter $filter `
           -name 'logExtFileFlags' -value ($current -bor $required)
