@@ -269,7 +269,15 @@
       # schema defaults). Get-WebConfigurationProperty can return null for properties
       # that equal the schema default, causing idempotency failures.
       $logFile = Get-WebConfiguration -pspath $pspath -filter $filter
-      $current = [int]$logFile.logExtFileFlags
+      $rawVal  = $logFile.logExtFileFlags
+      $current = [System.Convert]::ToInt32($rawVal)
+      $Ansible.Result = @{
+        current_raw  = [string]$rawVal
+        current_type = $rawVal.GetType().FullName
+        current_int  = $current
+        required     = $required
+        bits_ok      = (($current -band $required) -eq $required)
+      }
       if (($current -band $required) -ne $required) {
         Set-WebConfigurationProperty -pspath $pspath -filter $filter `
           -name 'logExtFileFlags' -value ($current -bor $required)
