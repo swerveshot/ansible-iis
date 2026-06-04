@@ -210,8 +210,10 @@
       Import-Module WebAdministration -ErrorAction Stop
       $pspath = 'MACHINE/WEBROOT/APPHOST'
       $filter = 'system.webServer/security/requestFiltering/verbs'
+      # Note: [bool]$_.Value.allowed would be $true for the string "False" in PowerShell.
+      # Compare as string to correctly detect an existing deny entry.
       $existing = Get-WebConfigurationProperty -pspath $pspath -filter $filter -name '.' |
-        Where-Object { $_.Value.verb -eq 'TRACE' -and [bool]$_.Value.allowed -eq $false }
+        Where-Object { $_.Value.verb -eq 'TRACE' -and [string]$_.Value.allowed -eq 'False' }
       if (-not $existing) {
         try {
           Remove-WebConfigurationProperty -pspath $pspath -filter $filter `
@@ -235,9 +237,10 @@
       $pspath = 'MACHINE/WEBROOT/APPHOST'
       $filter = 'system.webServer/httpErrors'
       # errorMode: 0=Detailed, 1=Custom, 2=DetailedLocalOnly
+      # null means IIS is using the schema default, which IS DetailedLocalOnly.
+      # Only change if an explicit non-default value has been set.
       $raw = (Get-WebConfigurationProperty -pspath $pspath -filter $filter -name 'errorMode').Value
-      $current = if ($null -eq $raw) { 0 } else { [int]$raw }
-      if ($current -ne 2) {
+      if (($null -ne $raw) -and ([int]$raw -ne 2)) {
         Set-WebConfigurationProperty -pspath $pspath -filter $filter `
           -name 'errorMode' -value 'DetailedLocalOnly'
         $Ansible.Changed = $true
@@ -260,7 +263,10 @@
       $filter   = 'system.applicationHost/sites/siteDefaults/logFile'
       $required = 113551
       $raw = (Get-WebConfigurationProperty -pspath $pspath -filter $filter -name 'logExtFileFlags').Value
-      $current = if ($null -eq $raw) { 0 } else { [int]$raw }
+      # null means schema default; use IIS default field set (Date+Time+ClientIP+UserName+
+      # Method+UriStem+UriQuery+HttpStatus+Win32Status = 68495) as the baseline.
+      # Convert via [long] first to handle flags-enum types safely.
+      $current = if ($null -eq $raw) { 68495 } else { [int][long]$raw }
       if (($current -band $required) -ne $required) {
         Set-WebConfigurationProperty -pspath $pspath -filter $filter `
           -name 'logExtFileFlags' -value ($current -bor $required)
