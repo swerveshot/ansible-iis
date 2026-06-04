@@ -22,6 +22,7 @@ on:
     paths-ignore:
       - "*.md"
       - "**/*.md"
+      - "LICENSE"
   pull_request:
     branches: [main]
 

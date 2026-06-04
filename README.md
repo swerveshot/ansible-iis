@@ -1,6 +1,7 @@
 # Ansible IIS Deployment Project
 
 [![CI](https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Ansible project for automated installation and configuration of IIS on Windows Server 2022.
 
