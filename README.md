@@ -1,7 +1,7 @@
 # Ansible IIS Deployment Project
 
-[![CI](https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml)
 [![MIT licensed][badge-license]][link-license]
+[![CI][badge-gh-actions]][link-gh-actions]
 
 Ansible project for automated installation and configuration of IIS on Windows Server 2022.
 
@@ -212,3 +212,8 @@ This role implements **CIS Level 1** controls from:
 - [CIS Microsoft Windows Server 2022 Benchmark v5.0.0](https://www.cisecurity.org/benchmark/microsoft_windows_server)
 
 Both benchmarks are available free of charge (registration required).
+
+[badge-license]: https://img.shields.io/github/license/swerveshot/ansible-iis.svg
+[link-license]: https://raw.githubusercontent.com/swerveshot/ansible-iis/main/LICENSE
+[badge-gh-actions]: https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml/badge.svg?branch=main
+[link-gh-actions]: https://github.com/swerveshot/ansible-iis/actions?query=workflow%3ACI
