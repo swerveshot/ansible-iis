@@ -264,23 +264,20 @@
       Import-Module WebAdministration -ErrorAction Stop
       $pspath   = 'MACHINE/WEBROOT/APPHOST'
       $filter   = 'system.applicationHost/sites/siteDefaults/logFile'
-      $required = 113551
-      # Use Get-WebConfiguration to read the effective value (never null, includes
-      # schema defaults). Get-WebConfigurationProperty can return null for properties
-      # that equal the schema default, causing idempotency failures.
-      $logFile = Get-WebConfiguration -pspath $pspath -filter $filter
-      $rawVal  = $logFile.logExtFileFlags
-      $current = [System.Convert]::ToInt32($rawVal)
-      $Ansible.Result = @{
-        current_raw  = [string]$rawVal
-        current_type = $rawVal.GetType().FullName
-        current_int  = $current
-        required     = $required
-        bits_ok      = (($current -band $required) -eq $required)
-      }
-      if (($current -band $required) -ne $required) {
+      # IIS returns logExtFileFlags as a comma-separated string of field names
+      # (e.g. "Date,Time,ClientIP,..."), not as an integer. Integer bitmask
+      # arithmetic fails with a FormatException. Compare by field name instead.
+      $requiredFields = @(
+        'Date','Time','ClientIP','UserName','Method','UriStem','UriQuery',
+        'HttpStatus','TimeTaken','HttpSubStatus','ServerPort','Win32Status'
+      )
+      $logFile    = Get-WebConfiguration -pspath $pspath -filter $filter
+      $currentSet = @([string]$logFile.logExtFileFlags -split ',')
+      $missing    = @($requiredFields | Where-Object { $currentSet -notcontains $_ })
+      if ($missing.Count -gt 0) {
+        $newValue = ($currentSet + $missing) -join ','
         Set-WebConfigurationProperty -pspath $pspath -filter $filter `
-          -name 'logExtFileFlags' -value ($current -bor $required)
+          -name 'logExtFileFlags' -value $newValue
         $Ansible.Changed = $true
       } else {
         $Ansible.Changed = $false
