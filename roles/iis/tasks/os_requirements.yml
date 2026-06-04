@@ -197,3 +197,76 @@
   tags:
     - os_requirements
     - tls
+
+# CIS IIS 10 Benchmark 7.5 / CIS Windows Server 2022 Benchmark
+- name: Disable TLS 1.1 (deprecated protocol)
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.1\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 0 }
+    - { name: DisabledByDefault, data: 1 }
+  tags:
+    - os_requirements
+    - tls
+
+# CIS IIS 10 Benchmark 7.2
+- name: Disable SSL 2.0 (insecure protocol)
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\SSL 2.0\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 0 }
+    - { name: DisabledByDefault, data: 1 }
+  tags:
+    - os_requirements
+    - tls
+
+# CIS IIS 10 Benchmark 7.3
+- name: Disable SSL 3.0 (insecure protocol)
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\SSL 3.0\\Server"
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - { name: Enabled, data: 0 }
+    - { name: DisabledByDefault, data: 1 }
+  tags:
+    - os_requirements
+    - tls
+
+# CIS IIS 10 Benchmark 7.7 - 7.11: disable weak and broken cipher suites
+- name: Disable weak cipher suites
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Ciphers\\{{ item }}"
+    name: Enabled
+    data: 0
+    type: dword
+  loop:
+    - "NULL"
+    - "DES 56/56"
+    - "RC4 40/128"
+    - "RC4 56/128"
+    - "RC4 64/128"
+    - "RC4 128/128"
+    - "Triple DES 168"
+    - "AES 128/128"
+  tags:
+    - os_requirements
+    - tls
+
+# CIS IIS 10 Benchmark 7.12
+- name: Ensure AES 256/256 cipher suite is enabled
+  ansible.windows.win_regedit:
+    path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Ciphers\\AES 256/256"
+    name: Enabled
+    data: 1
+    type: dword
+  tags:
+    - os_requirements
+    - tls

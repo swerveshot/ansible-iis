@@ -20,15 +20,14 @@ iis_features:
   - Web-Custom-Logging
   - Web-Log-Libraries
   - Web-Request-Monitor
-  - Web-Http-Tracing
   - Web-Performance
   - Web-Stat-Compression
   - Web-Dyn-Compression
   - Web-Security
   - Web-Filtering
-  - Web-Basic-Auth
+  # Web-Basic-Auth and Web-Digest-Auth omitted: CIS IIS 10 Benchmark recommends
+  # not installing authentication modules that are not explicitly required.
   - Web-Windows-Auth
-  - Web-Digest-Auth
   - Web-IP-Security
   - Web-Url-Auth
   - Web-App-Dev

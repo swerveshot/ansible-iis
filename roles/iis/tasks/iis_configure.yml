@@ -78,6 +78,7 @@
       recycling.periodicRestart.time: "00:00:00"
       processModel.idleTimeout: "00:20:00"
       processModel.loadUserProfile: "true"
+      processModel.identityType: ApplicationPoolIdentity  # CIS IIS 10 Benchmark 1.4
       failure.rapidFailProtection: "true"
       failure.rapidFailProtectionMaxCrashes: "5"
   tags:
@@ -183,6 +184,93 @@
   tags:
     - iis_configure
     - iis_security
+
+# --- CIS IIS 10 Benchmark 1.3: disable directory browsing -------------------
+- name: Disable directory browsing globally
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $current = (Get-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+        -filter 'system.webServer/directoryBrowse' -name 'enabled').Value
+      if ([bool]$current -ne $false) {
+        Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+          -filter 'system.webServer/directoryBrowse' -name 'enabled' -value $false
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+  tags:
+    - iis_configure
+    - iis_security
+
+# --- CIS IIS 10 Benchmark 4.6: disable HTTP TRACE method --------------------
+- name: Disable HTTP TRACE method via request filtering
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $pspath = 'MACHINE/WEBROOT/APPHOST'
+      $filter = 'system.webServer/security/requestFiltering/verbs'
+      $existing = Get-WebConfigurationProperty -pspath $pspath -filter $filter -name '.' |
+        Where-Object { $_.Value.verb -eq 'TRACE' -and [bool]$_.Value.allowed -eq $false }
+      if (-not $existing) {
+        try {
+          Remove-WebConfigurationProperty -pspath $pspath -filter $filter `
+            -name '.' -AtElement @{verb='TRACE'} -ErrorAction SilentlyContinue
+        } catch {}
+        Add-WebConfigurationProperty -pspath $pspath -filter $filter `
+          -name '.' -value @{verb='TRACE'; allowed='false'}
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+  tags:
+    - iis_configure
+    - iis_security
+
+# --- CIS IIS 10 Benchmark 3.1: hide detailed errors from remote clients ------
+- name: Set custom error mode to DetailedLocalOnly
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $pspath = 'MACHINE/WEBROOT/APPHOST'
+      $filter = 'system.webServer/httpErrors'
+      # errorMode: 0=Detailed, 1=Custom, 2=DetailedLocalOnly
+      $raw = (Get-WebConfigurationProperty -pspath $pspath -filter $filter -name 'errorMode').Value
+      $current = if ($null -eq $raw) { 0 } else { [int]$raw }
+      if ($current -ne 2) {
+        Set-WebConfigurationProperty -pspath $pspath -filter $filter `
+          -name 'errorMode' -value 'DetailedLocalOnly'
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+  tags:
+    - iis_configure
+    - iis_security
+
+# --- CIS IIS 10 Benchmark 5.x: ensure required log fields are enabled --------
+# Required fields: Date, Time, ClientIP, UserName, Method, UriStem, UriQuery,
+# HttpStatus, TimeTaken, HttpSubStatus, ServerPort, Win32Status
+# Bitmask: 1+2+4+8+128+256+512+2048+4096+8192+32768+65536 = 113551
+- name: Configure required W3C log fields
+  ansible.windows.win_powershell:
+    script: |
+      Import-Module WebAdministration -ErrorAction Stop
+      $pspath   = 'MACHINE/WEBROOT/APPHOST'
+      $filter   = 'system.applicationHost/sites/siteDefaults/logFile'
+      $required = 113551
+      $raw = (Get-WebConfigurationProperty -pspath $pspath -filter $filter -name 'logExtFileFlags').Value
+      $current = if ($null -eq $raw) { 0 } else { [int]$raw }
+      if (($current -band $required) -ne $required) {
+        Set-WebConfigurationProperty -pspath $pspath -filter $filter `
+          -name 'logExtFileFlags' -value ($current -bor $required)
+        $Ansible.Changed = $true
+      } else {
+        $Ansible.Changed = $false
+      }
+  tags:
+    - iis_configure
+    - iis_logging
 
 # --- Hide server response header (registry) ---------------------------------
 - name: Disable IIS server version header via registry

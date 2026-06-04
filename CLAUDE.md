@@ -282,6 +282,8 @@ and reduces overhead on every Ansible module call.
 - `vault.yml.example` shows the format without real values — is committed to git
 - `vars/main.yml` contains only public Microsoft constants (URLs, registry paths)
 - `defaults/main.yml` contains configurable default values — no secrets
+- The role implements **CIS Level 1** controls from **CIS Microsoft IIS 10 Benchmark v1.2.1**
+  and **CIS Microsoft Windows Server 2022 Benchmark v5.0.0**
 
 ### Ansible Lint and code quality
 - Always use Fully Qualified Collection Names (FQCN), e.g. `ansible.windows.win_get_url`
