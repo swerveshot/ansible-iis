@@ -213,7 +213,7 @@ This role implements **CIS Level 1** controls from:
 
 Both benchmarks are available free of charge (registration required).
 
-[badge-license]: https://img.shields.io/badge/License-MIT-green.svg
+[badge-license]: https://img.shields.io/github/license/swerveshot/ansible-iis.svg
 [link-license]: https://raw.githubusercontent.com/swerveshot/ansible-iis/main/LICENSE
-[badge-gh-actions]: https://github.com/swerveshot/ansible-iis/actions/workflows/ci.yml/badge.svg?branch=main
+[badge-gh-actions]: https://img.shields.io/github/actions/workflow/status/swerveshot/ansible-iis/ci.yml?branch=main&label=CI
 [link-gh-actions]: https://github.com/swerveshot/ansible-iis/actions?query=workflow%3ACI
